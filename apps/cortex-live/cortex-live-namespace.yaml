@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cortex-live
+  labels:
+    name: cortex-live
+    monitoring: enabled

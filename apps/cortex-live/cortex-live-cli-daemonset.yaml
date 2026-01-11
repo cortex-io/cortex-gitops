@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cortex-live-cli
+  namespace: cortex-system
+  labels:
+    app: cortex-live-cli
+spec:
+  selector:
+    matchLabels:
+      app: cortex-live-cli
+  template:
+    metadata:
+      labels:
+        app: cortex-live-cli
+    spec:
+      terminationGracePeriodSeconds: 45
+      hostPID: true
+      containers:
+      - name: installer
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          cat > /host/usr/local/bin/cortex-live <<'EOF'
+          #!/bin/bash
+          # Cortex Live - Real-time k3s cluster monitoring TUI
+          POD=$(kubectl get pods -n cortex-live -l app=cortex-live -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          if [ -z "$POD" ]; then
+            echo "Error: cortex-live pod not found"
+            exit 1
+          fi
+          kubectl exec -it -n cortex-live $POD -- python -m cortex_live
+          EOF
+          chmod +x /host/usr/local/bin/cortex-live
+          echo "✓ Installed cortex-live CLI wrapper to /usr/local/bin/cortex-live"
+          echo "  Run 'cortex-live' from any node to launch the TUI"
+          sleep infinity
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: host-usr
+          mountPath: /host/usr
+      volumes:
+      - name: host-usr
+        hostPath:
+          path: /usr
+          type: Directory
