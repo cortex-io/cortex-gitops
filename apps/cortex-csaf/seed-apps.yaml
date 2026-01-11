@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csaf-seed-apps
+  namespace: cortex-csaf
+data:
+  pod-restart-monitor.yaml: |
+    apiVersion: cortex.ry-ops.dev/v1alpha1
+    kind: SecurityApp
+    metadata:
+      name: pod-restart-monitor
+      version: 1.0.0
+      description: Alerts when pods restart excessively, indicating potential issues
+      tags: [kubernetes, availability, stability]
+    spec:
+      triggers:
+        - type: schedule
+          config:
+            cron: "*/5 * * * *"
+      integrations:
+        - name: kubernetes-mcp
+          required: true
+          permissions: [pods:read, events:read]
+      pipeline:
+        - step: get-pod-restarts
+          action: query
+          config:
+            integration: kubernetes-mcp
+            operation: get_pod_restart_counts
+            params:
+              window: 10m
+              namespaces: [production, monitoring, cortex]
+            output_var: restart_data
+        - step: evaluate-restarts
+          action: evaluate
+          config:
+            input_var: restart_data
+            rules:
+              - name: excessive_restarts
+                condition: "restart_count >= 3"
+                severity: high
+              - name: moderate_restarts
+                condition: "restart_count >= 2"
+                severity: medium
+            output_var: findings
+        - step: notify
+          action: notify
+          config:
+            destination: cortex-chat
+            template: security_finding
+            input_var: findings
+            throttle:
+              key: pod_name
+              window: 30m
+      runtime:
+        agent_type: security-app
+        priority: normal
+        self_heal: true
+
+  threat-correlation.yaml: |
+    apiVersion: cortex.ry-ops.dev/v1alpha1
+    kind: SecurityApp
+    metadata:
+      name: threat-correlation
+      version: 1.0.0
+      description: Correlates Sandfly host alerts with UniFi network traffic
+      tags: [security, correlation, network, host]
+    spec:
+      triggers:
+        - type: schedule
+          config:
+            cron: "*/15 * * * *"
+      integrations:
+        - name: sandfly-mcp
+          required: true
+          permissions: [alerts:read, hosts:read]
+        - name: unifi-mcp
+          required: true
+          permissions: [clients:read, traffic:read]
+        - name: kubernetes-mcp
+          required: false
+          permissions: [pods:read]
+      pipeline:
+        - step: get-sandfly-alerts
+          action: query
+          config:
+            integration: sandfly-mcp
+            operation: list_alerts
+            params:
+              since: 15m
+              severity: [medium, high, critical]
+            output_var: sandfly_alerts
+        - step: correlate-network
+          action: correlate
+          config:
+            sources:
+              - var: sandfly_alerts
+                key: host_ip
+              - integration: unifi-mcp
+                operation: get_client_traffic
+                params:
+                  window: 15m
+                key: ip
+            output_var: correlated_events
+        - step: evaluate
+          action: evaluate
+          config:
+            input_var: correlated_events
+            rules:
+              - name: lateral_movement_attempt
+                condition: "internal_connections > 3"
+                severity: critical
+              - name: suspicious_correlation
+                condition: "unusual_ports == true"
+                severity: high
+            output_var: findings
+        - step: notify
+          action: notify
+          config:
+            destination: cortex-chat
+            template: correlated_threat
+            input_var: findings
+      runtime:
+        agent_type: security-app
+        priority: high
+        self_heal: true
+
+  cert-expiry-watcher.yaml: |
+    apiVersion: cortex.ry-ops.dev/v1alpha1
+    kind: SecurityApp
+    metadata:
+      name: cert-expiry-watcher
+      version: 1.0.0
+      description: Monitors TLS certificates and alerts before expiry
+      tags: [security, certificates, compliance]
+    spec:
+      triggers:
+        - type: schedule
+          config:
+            cron: "0 8 * * *"
+      integrations:
+        - name: kubernetes-mcp
+          required: true
+          permissions: [secrets:read]
+      pipeline:
+        - step: get-k8s-certs
+          action: query
+          config:
+            integration: kubernetes-mcp
+            operation: get_tls_secrets
+            params:
+              namespaces: ["*"]
+            output_var: k8s_certs
+        - step: evaluate
+          action: evaluate
+          config:
+            input_var: k8s_certs
+            rules:
+              - name: expired
+                condition: "days_until_expiry < 0"
+                severity: critical
+              - name: expiring_soon
+                condition: "days_until_expiry <= 7"
+                severity: high
+              - name: expiring_later
+                condition: "days_until_expiry <= 30"
+                severity: medium
+            output_var: findings
+        - step: notify
+          action: notify
+          config:
+            destination: cortex-chat
+            template: cert_expiry_report
+            input_var: findings
+            aggregate: true
+      runtime:
+        agent_type: security-app
+        priority: normal

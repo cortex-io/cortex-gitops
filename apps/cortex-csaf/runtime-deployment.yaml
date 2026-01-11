@@ -1,0 +1,435 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csaf-runtime-code
+  namespace: cortex-csaf
+data:
+  main.py: |
+    #!/usr/bin/env python3
+    """
+    CSAF Runtime Service
+    Executes security app pipelines via MCP integrations
+    """
+    import os
+    import json
+    import logging
+    import time
+    import requests
+    from datetime import datetime
+    from flask import Flask, request, jsonify
+    from flask_cors import CORS
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    app = Flask(__name__)
+    CORS(app)
+
+    REGISTRY_URL = os.getenv('REGISTRY_URL', 'http://csaf-registry:8080')
+    MCP_GATEWAY_URL = os.getenv('MCP_GATEWAY_URL', 'http://cortex-mcp-gateway.cortex.svc:8080')
+
+    scheduler = BackgroundScheduler()
+    scheduler.start()
+
+    class SecurityAppRunner:
+        """Executes a security app pipeline"""
+
+        def __init__(self, app_definition):
+            self.app = app_definition
+            self.context = {}
+
+        def run(self, trigger_event=None):
+            """Execute the app pipeline"""
+            run_id = f"{self.app['metadata']['name']}-{int(time.time())}"
+            started_at = datetime.utcnow().isoformat()
+
+            logger.info(f"Starting execution: {run_id}")
+
+            try:
+                # Execute pipeline steps
+                for step in self.app['spec']['pipeline']:
+                    result = self.execute_step(step)
+                    if step.get('config', {}).get('output_var'):
+                        self.context[step['config']['output_var']] = result
+
+                # Record successful execution
+                self.record_execution(run_id, 'success', started_at)
+                return {"status": "success", "run_id": run_id}
+
+            except Exception as e:
+                logger.error(f"Execution failed: {e}")
+                self.record_execution(run_id, 'failed', started_at, error=str(e))
+                return {"status": "failed", "error": str(e)}
+
+        def execute_step(self, step):
+            """Execute a single pipeline step"""
+            action = step['action']
+            config = step.get('config', {})
+
+            logger.info(f"Executing step: {step['step']} (action: {action})")
+
+            if action == 'query':
+                return self.execute_query(config)
+            elif action == 'correlate':
+                return self.execute_correlate(config)
+            elif action == 'enrich':
+                return self.execute_enrich(config)
+            elif action == 'evaluate':
+                return self.execute_evaluate(config)
+            elif action == 'notify':
+                return self.execute_notify(config)
+            elif action == 'remediate':
+                return self.execute_remediate(config)
+            else:
+                raise ValueError(f"Unknown action: {action}")
+
+        def execute_query(self, config):
+            """Query an MCP integration"""
+            integration = config.get('integration')
+            operation = config.get('operation')
+            params = config.get('params', {})
+
+            # Replace template variables
+            for key, value in params.items():
+                if isinstance(value, str) and value.startswith('${'):
+                    var_name = value[2:-1]
+                    params[key] = self.context.get(var_name)
+
+            # Call MCP gateway
+            try:
+                response = requests.post(
+                    f"{MCP_GATEWAY_URL}/mcp/{integration}/{operation}",
+                    json=params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                logger.error(f"MCP query failed: {e}")
+                return {}
+
+        def execute_correlate(self, config):
+            """Correlate data from multiple sources"""
+            sources = config.get('sources', [])
+            results = []
+
+            for source in sources:
+                if 'var' in source:
+                    # Use existing context variable
+                    data = self.context.get(source['var'], [])
+                    results.append(data)
+                elif 'integration' in source:
+                    # Query integration
+                    query_result = self.execute_query({
+                        'integration': source['integration'],
+                        'operation': source['operation'],
+                        'params': source.get('params', {})
+                    })
+                    results.append(query_result)
+
+            # Simple correlation by key
+            key = config.get('key')
+            if key:
+                # Join on key field
+                return self.join_by_key(results, key)
+
+            return results
+
+        def join_by_key(self, datasets, key):
+            """Join datasets by a common key"""
+            # Simplified join logic
+            joined = []
+            if len(datasets) >= 2:
+                for item1 in datasets[0]:
+                    key_value = item1.get(key)
+                    if key_value:
+                        for item2 in datasets[1]:
+                            if item2.get(key) == key_value:
+                                joined.append({**item1, **item2})
+            return joined
+
+        def execute_enrich(self, config):
+            """Enrich data with additional context"""
+            input_var = config.get('input_var')
+            data = self.context.get(input_var, [])
+
+            # Placeholder for enrichment logic
+            # In production, would add DNS, GeoIP, threat intel, etc.
+            return data
+
+        def execute_evaluate(self, config):
+            """Evaluate rules against data"""
+            input_var = config.get('input_var')
+            data = self.context.get(input_var, [])
+            rules = config.get('rules', [])
+
+            findings = []
+
+            for item in (data if isinstance(data, list) else [data]):
+                for rule in rules:
+                    if self.evaluate_condition(rule['condition'], item):
+                        findings.append({
+                            'rule_name': rule['name'],
+                            'severity': rule.get('severity', 'medium'),
+                            'data': item,
+                            'timestamp': datetime.utcnow().isoformat()
+                        })
+
+            return findings
+
+        def evaluate_condition(self, condition, data):
+            """Evaluate a simple condition against data"""
+            # Very simplified condition evaluation
+            # In production, would use proper expression parser
+            try:
+                # Replace data references
+                for key, value in data.items():
+                    condition = condition.replace(f'${key}', str(value))
+
+                # Basic evaluation (UNSAFE for production, use safe eval library)
+                return eval(condition)
+            except:
+                return False
+
+        def execute_notify(self, config):
+            """Send notifications"""
+            destination = config.get('destination')
+            input_var = config.get('input_var')
+            findings = self.context.get(input_var, [])
+
+            logger.info(f"Notifying {destination} with {len(findings)} findings")
+
+            # In production, would integrate with cortex-chat
+            # For now, just log
+            for finding in findings:
+                logger.info(f"FINDING: {finding}")
+
+            return {"notified": len(findings)}
+
+        def execute_remediate(self, config):
+            """Execute remediation actions"""
+            input_var = config.get('input_var')
+            findings = self.context.get(input_var, [])
+            actions = config.get('actions', [])
+
+            # Remediation requires approval - log for now
+            logger.warning(f"Remediation actions pending approval: {actions}")
+            return {"pending_approval": len(actions)}
+
+        def record_execution(self, run_id, status, started_at, error=None):
+            """Record execution in registry"""
+            try:
+                requests.post(
+                    f"{REGISTRY_URL}/api/executions",
+                    json={
+                        'app_name': self.app['metadata']['name'],
+                        'run_id': run_id,
+                        'trigger_type': 'manual',
+                        'status': status,
+                        'findings': self.context.get('findings', []),
+                        'error': error,
+                        'started_at': started_at,
+                        'completed_at': datetime.utcnow().isoformat()
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to record execution: {e}")
+
+    @app.route('/health', methods=['GET'])
+    def health():
+        return jsonify({"status": "healthy", "service": "csaf-runtime"})
+
+    @app.route('/api/apps/<name>/run', methods=['POST'])
+    def run_app(name):
+        """Trigger immediate app execution"""
+        try:
+            # Get app definition from registry
+            response = requests.get(f"{REGISTRY_URL}/api/apps/{name}")
+            response.raise_for_status()
+            app_data = response.json()
+
+            app_definition = app_data['app']['definition']
+
+            # Run the app
+            runner = SecurityAppRunner(app_definition)
+            result = runner.run()
+
+            return jsonify(result)
+
+        except Exception as e:
+            logger.error(f"Failed to run app {name}: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/scheduler/sync', methods=['POST'])
+    def sync_scheduled_apps():
+        """Sync scheduled apps with the scheduler"""
+        try:
+            # Get all active apps
+            response = requests.get(f"{REGISTRY_URL}/api/apps")
+            response.raise_for_status()
+            apps = response.json()['apps']
+
+            scheduled_count = 0
+            for app in apps:
+                if app.get('status') == 'active':
+                    # Get full definition
+                    app_response = requests.get(f"{REGISTRY_URL}/api/apps/{app['name']}")
+                    app_def = app_response.json()['app']['definition']
+
+                    # Check for schedule triggers
+                    for trigger in app_def['spec'].get('triggers', []):
+                        if trigger['type'] == 'schedule':
+                            cron = trigger['config']['cron']
+                            schedule_app(app['name'], cron, app_def)
+                            scheduled_count += 1
+
+            return jsonify({"scheduled": scheduled_count})
+
+        except Exception as e:
+            logger.error(f"Failed to sync scheduler: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    def schedule_app(app_name, cron_expression, app_definition):
+        """Schedule an app to run on cron schedule"""
+        job_id = f"csaf-{app_name}"
+
+        # Remove existing job if present
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+
+        # Add new job
+        trigger = CronTrigger.from_crontab(cron_expression)
+        scheduler.add_job(
+            func=lambda: run_scheduled_app(app_definition),
+            trigger=trigger,
+            id=job_id,
+            name=app_name,
+            replace_existing=True
+        )
+
+        logger.info(f"Scheduled app {app_name} with cron: {cron_expression}")
+
+    def run_scheduled_app(app_definition):
+        """Run a scheduled app"""
+        app_name = app_definition['metadata']['name']
+        logger.info(f"Running scheduled app: {app_name}")
+
+        try:
+            runner = SecurityAppRunner(app_definition)
+            runner.run()
+        except Exception as e:
+            logger.error(f"Scheduled execution failed for {app_name}: {e}")
+
+    if __name__ == '__main__':
+        # Sync scheduler on startup
+        time.sleep(10)  # Wait for registry to be ready
+        try:
+            requests.post('http://localhost:8080/api/scheduler/sync')
+        except:
+            logger.warning("Failed to sync scheduler on startup")
+
+        app.run(host='0.0.0.0', port=8080)
+
+  requirements.txt: |
+    flask==3.0.0
+    flask-cors==4.0.0
+    requests==2.31.0
+    apscheduler==3.10.4
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-runtime
+  namespace: cortex-csaf
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: csaf-runtime
+  template:
+    metadata:
+      labels:
+        app: csaf-runtime
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: csaf-runtime
+      containers:
+        - name: runtime
+          image: python:3.11-slim
+          command:
+            - /bin/bash
+            - -c
+            - |
+              pip install --no-cache-dir -r /app/requirements.txt
+              python /app/main.py
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: REGISTRY_URL
+              value: "http://csaf-registry:8080"
+            - name: MCP_GATEWAY_URL
+              value: "http://cortex-mcp-gateway.cortex.svc:8080"
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: csaf-redis-secret
+                  key: REDIS_URL
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: code
+          configMap:
+            name: csaf-runtime-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-runtime
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-runtime
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: csaf-runtime-hpa
+  namespace: cortex-csaf
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: csaf-runtime
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

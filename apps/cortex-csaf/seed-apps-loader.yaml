@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: csaf-seed-apps-loader
+  namespace: cortex-csaf
+spec:
+  template:
+    metadata:
+      labels:
+        app: seed-apps-loader
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: loader
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for registry to be ready..."
+              sleep 30
+
+              for app in /apps/*.yaml; do
+                echo "Loading app: $app"
+                curl -X POST http://csaf-registry:8080/api/apps \
+                  -H "Content-Type: application/json" \
+                  -d @$app \
+                  --fail || echo "Failed to load $app"
+                sleep 2
+              done
+
+              echo "Seed apps loaded successfully"
+          volumeMounts:
+            - name: seed-apps
+              mountPath: /apps
+      volumes:
+        - name: seed-apps
+          configMap:
+            name: csaf-seed-apps
