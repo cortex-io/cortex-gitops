@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: cortex-mcp-server
+    component: mcp-gateway
+  name: cortex-mcp-server
+  namespace: cortex-system
+spec:
+  clusterIP: 10.43.41.79
+  clusterIPs:
+  - 10.43.41.79
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: mcp
+    port: 3000
+    protocol: TCP
+    targetPort: mcp
+  - name: health
+    port: 8080
+    protocol: TCP
+    targetPort: health
+  selector:
+    app: cortex-mcp-server
+  sessionAffinity: None
+  type: ClusterIP

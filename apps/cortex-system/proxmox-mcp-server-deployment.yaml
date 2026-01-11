@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '20'
+  labels:
+    app: proxmox-mcp-server
+  name: proxmox-mcp-server
+  namespace: cortex-system
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: proxmox-mcp-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-01-03T21:07:46Z'
+      creationTimestamp: null
+      labels:
+        app: proxmox-mcp-server
+    spec:
+      containers:
+      - args:
+        - 'set -e
+
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 proxmoxer>=2.0.0 pydantic>=2.0.0
+          python-dotenv>=1.0.0
+
+
+          # Copy fixed server.py from ConfigMap over the broken one
+
+          cp -f /fixed/server.py /app/proxmox_mcp_server/server.py
+
+
+          echo "Starting Proxmox MCP HTTP Server on port 3000..."
+
+          python3 /wrapper/mcp-http-wrapper.py
+
+          '
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: PROXMOX_HOST
+          value: 10.88.140.164
+        - name: PROXMOX_USER
+          value: pveauditor@pve
+        - name: PROXMOX_TOKEN_NAME
+          value: monitoring
+        - name: PROXMOX_TOKEN_VALUE
+          value: 81282773-5b9a-4c1a-8483-d1c91d0faf4e
+        - name: PROXMOX_VERIFY_SSL
+          value: 'false'
+        - name: MCP_COMMAND
+          value: python -m proxmox_mcp_server.server
+        - name: MCP_PORT
+          value: '3000'
+        - name: PORT
+          value: '3000'
+        image: python:3.11-slim
+        imagePullPolicy: IfNotPresent
+        name: app
+        ports:
+        - containerPort: 3000
+          name: mcp
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app
+          name: repo
+        - mountPath: /wrapper
+          name: http-wrapper
+        - mountPath: /fixed
+          name: fixed-server
+        workingDir: /app
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - args:
+        - clone
+        - --single-branch
+        - --
+        - https://github.com/ry-ops/proxmox-mcp-server.git
+        - /repo
+        env:
+        - name: MCP_COMMAND
+          value: python -m proxmox_mcp_server.server
+        - name: PROXMOX_USER
+          value: pveauditor@pve
+        - name: PROXMOX_TOKEN_NAME
+          value: monitoring
+        - name: PROXMOX_TOKEN_VALUE
+          value: 81282773-5b9a-4c1a-8483-d1c91d0faf4e
+        - name: PROXMOX_VERIFY_SSL
+          value: 'false'
+        - name: PORT
+          value: '3000'
+        - name: PROXMOX_HOST
+          value: 10.88.140.164
+        image: alpine/git
+        imagePullPolicy: Always
+        name: git-clone
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir: {}
+        name: repo
+      - configMap:
+          defaultMode: 420
+          name: mcp-http-wrapper
+        name: http-wrapper
+      - configMap:
+          defaultMode: 420
+          name: proxmox-server-fixed
+        name: fixed-server
+      - configMap:
+          defaultMode: 420
+          name: proxmox-server-fix
+        name: server-fix

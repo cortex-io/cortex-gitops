@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '1'
+  labels:
+    app: coordinator-master
+    role: master-agent
+  name: coordinator-master
+  namespace: cortex-system
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: coordinator-master
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: coordinator-master
+        role: master-agent
+    spec:
+      containers:
+      - args:
+        - "apk add --no-cache kubectl git curl jq\n\necho \"=== Coordinator Master\
+          \ Agent ===\"\necho \"Role: Task routing and orchestration\"\necho \"Capabilities:\"\
+          \necho \"  - Route tasks to specialist masters (MoE pattern)\"\necho \"\
+          \  - Coordinate multi-agent workflows\"\necho \"  - Monitor task execution\"\
+          \necho \"  - Handle escalations\"\necho \"\"\necho \"Watching for task directives\
+          \ in cortex-system jobs...\"\n\nwhile true; do\n  # Monitor for new jobs\
+          \ with task directives\n  kubectl get jobs -n cortex-system -o json | \\\
+          \n    jq -r '.items[] | select(.metadata.labels.taskType == \"infrastructure-deploy\"\
+          ) | .metadata.name' | \\\n    while read job; do\n      echo \"Found task:\
+          \ $job - analyzing and routing...\"\n    done\n  sleep 30\ndone\n"
+        command:
+        - /bin/sh
+        - -c
+        image: python:3.12-alpine
+        imagePullPolicy: IfNotPresent
+        name: coordinator
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 200m
+            memory: 512Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: cortex-master-agents
+      serviceAccountName: cortex-master-agents
+      terminationGracePeriodSeconds: 30
