@@ -1,0 +1,179 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: csaf-scheduler
+  namespace: cortex-csaf
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: csaf-scheduler
+        spec:
+          serviceAccountName: csaf-runtime
+          restartPolicy: OnFailure
+          containers:
+            - name: scheduler
+              image: python:3.12-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  pip install --no-cache-dir requests pyyaml kubernetes
+
+                  cat > /app/scheduler.py <<'EOF'
+                  import requests
+                  import yaml
+                  import os
+                  from datetime import datetime
+                  from kubernetes import client, config
+
+                  # Load k8s config
+                  config.load_incluster_config()
+                  apps_v1 = client.AppsV1Api()
+                  core_v1 = client.CoreV1Api()
+
+                  REGISTRY_URL = os.getenv("REGISTRY_URL", "http://csaf-registry:8080")
+                  NAMESPACE = os.getenv("NAMESPACE", "cortex-csaf")
+
+                  def get_enabled_apps():
+                      """Fetch enabled security apps from registry"""
+                      try:
+                          response = requests.get(f"{REGISTRY_URL}/apps", timeout=10)
+                          response.raise_for_status()
+                          apps = response.json()
+                          return [app for app in apps if app.get("enabled", True)]
+                      except Exception as e:
+                          print(f"Error fetching apps: {e}")
+                          return []
+
+                  def deploy_app(app_name, yaml_definition):
+                      """Deploy a security app to k8s"""
+                      try:
+                          manifest = yaml.safe_load(yaml_definition)
+                          kind = manifest.get("kind")
+                          name = manifest.get("metadata", {}).get("name", app_name)
+
+                          print(f"Deploying {kind}/{name}...")
+
+                          if kind == "Deployment":
+                              try:
+                                  apps_v1.read_namespaced_deployment(name, NAMESPACE)
+                                  # Update existing
+                                  apps_v1.patch_namespaced_deployment(name, NAMESPACE, manifest)
+                                  print(f"  ✓ Updated deployment {name}")
+                              except client.exceptions.ApiException as e:
+                                  if e.status == 404:
+                                      # Create new
+                                      apps_v1.create_namespaced_deployment(NAMESPACE, manifest)
+                                      print(f"  ✓ Created deployment {name}")
+                                  else:
+                                      raise
+                          elif kind == "Job":
+                              # Jobs are one-time, create new each time
+                              batch_v1 = client.BatchV1Api()
+                              # Add timestamp to job name to make it unique
+                              timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                              manifest["metadata"]["name"] = f"{name}-{timestamp}"
+                              batch_v1.create_namespaced_job(NAMESPACE, manifest)
+                              print(f"  ✓ Created job {name}-{timestamp}")
+                          else:
+                              print(f"  ⚠️  Unsupported kind: {kind}")
+
+                      except Exception as e:
+                          print(f"  ✗ Error deploying {app_name}: {e}")
+
+                  def main():
+                      print("=" * 60)
+                      print("CSAF Scheduler - Security App Deployment")
+                      print(f"Time: {datetime.now().isoformat()}")
+                      print("=" * 60)
+                      print()
+
+                      # Fetch enabled apps
+                      apps = get_enabled_apps()
+                      print(f"Found {len(apps)} enabled security apps")
+                      print()
+
+                      if not apps:
+                          print("No apps to deploy")
+                          return
+
+                      # Deploy each app
+                      deployed = 0
+                      failed = 0
+
+                      for app in apps:
+                          name = app.get("name")
+                          yaml_def = app.get("yaml_definition")
+
+                          if not yaml_def:
+                              print(f"⚠️  {name}: No YAML definition")
+                              failed += 1
+                              continue
+
+                          deploy_app(name, yaml_def)
+                          deployed += 1
+
+                      print()
+                      print("=" * 60)
+                      print(f"Deployment complete: {deployed} deployed, {failed} failed")
+                      print("=" * 60)
+
+                  if __name__ == "__main__":
+                      main()
+                  EOF
+
+                  python /app/scheduler.py
+              env:
+                - name: REGISTRY_URL
+                  value: "http://csaf-registry:8080"
+                - name: NAMESPACE
+                  value: "cortex-csaf"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csaf-runtime
+  namespace: cortex-csaf
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: csaf-deployer
+  namespace: cortex-csaf
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create"]
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: csaf-deployer-binding
+  namespace: cortex-csaf
+subjects:
+  - kind: ServiceAccount
+    name: csaf-runtime
+    namespace: cortex-csaf
+roleRef:
+  kind: Role
+  name: csaf-deployer
+  apiGroup: rbac.authorization.k8s.io

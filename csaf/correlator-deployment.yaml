@@ -1,0 +1,339 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-correlator
+  namespace: cortex-csaf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csaf-correlator
+  template:
+    metadata:
+      labels:
+        app: csaf-correlator
+    spec:
+      containers:
+        - name: correlator
+          image: python:3.12-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install --no-cache-dir fastapi uvicorn redis
+
+              mkdir -p /app
+              cat > /app/app.py <<'EOF'
+              from fastapi import FastAPI, HTTPException
+              from pydantic import BaseModel
+              import redis
+              import os
+              import json
+              from datetime import datetime, timedelta
+              from typing import List, Dict, Optional
+              from collections import defaultdict
+
+              app = FastAPI(title="CSAF Correlator")
+
+              # Redis connection
+              redis_client = redis.Redis(
+                  host=os.getenv("REDIS_HOST", "csaf-redis"),
+                  port=6379,
+                  decode_responses=True
+              )
+
+              class SecurityEvent(BaseModel):
+                  source: str
+                  event_type: str
+                  severity: str
+                  message: str
+                  metadata: Optional[Dict] = {}
+                  timestamp: Optional[str] = None
+
+              class CorrelationRule(BaseModel):
+                  name: str
+                  description: str
+                  event_types: List[str]
+                  time_window_seconds: int
+                  threshold: int
+                  severity: str
+
+              @app.get("/health")
+              async def health():
+                  try:
+                      redis_client.ping()
+                      return {"status": "healthy", "service": "csaf-correlator", "redis": "connected"}
+                  except:
+                      return {"status": "degraded", "service": "csaf-correlator", "redis": "disconnected"}
+
+              @app.post("/events")
+              async def ingest_event(event: SecurityEvent):
+                  """Ingest security event for correlation"""
+                  # Set timestamp if not provided
+                  if not event.timestamp:
+                      event.timestamp = datetime.now().isoformat()
+
+                  # Store event in Redis (sorted set by timestamp)
+                  event_key = f"events:{event.source}:{event.event_type}"
+                  score = datetime.fromisoformat(event.timestamp).timestamp()
+
+                  event_data = json.dumps({
+                      "source": event.source,
+                      "event_type": event.event_type,
+                      "severity": event.severity,
+                      "message": event.message,
+                      "metadata": event.metadata,
+                      "timestamp": event.timestamp
+                  })
+
+                  redis_client.zadd(event_key, {event_data: score})
+
+                  # Keep only last 24 hours of events
+                  cutoff = (datetime.now() - timedelta(hours=24)).timestamp()
+                  redis_client.zremrangebyscore(event_key, 0, cutoff)
+
+                  # Increment counter
+                  counter_key = f"counter:{event.source}:{event.event_type}"
+                  redis_client.incr(counter_key)
+                  redis_client.expire(counter_key, 86400)  # 24 hours
+
+                  # Check for correlations
+                  correlations = await check_correlations(event)
+
+                  return {
+                      "status": "ingested",
+                      "event_type": event.event_type,
+                      "correlations_triggered": len(correlations),
+                      "correlations": correlations
+                  }
+
+              async def check_correlations(event: SecurityEvent) -> List[Dict]:
+                  """Check if event triggers any correlation rules"""
+                  correlations = []
+
+                  # Example rules (in production, load from database)
+                  rules = [
+                      CorrelationRule(
+                          name="multiple_failed_logins",
+                          description="Multiple failed login attempts",
+                          event_types=["failed_login", "auth_failure"],
+                          time_window_seconds=300,
+                          threshold=5,
+                          severity="high"
+                      ),
+                      CorrelationRule(
+                          name="vulnerability_scan_spike",
+                          description="Spike in vulnerability detections",
+                          event_types=["vulnerability_detected", "cve_found"],
+                          time_window_seconds=3600,
+                          threshold=10,
+                          severity="medium"
+                      ),
+                      CorrelationRule(
+                          name="security_alert_storm",
+                          description="High volume of security alerts",
+                          event_types=["security_alert", "intrusion_attempt"],
+                          time_window_seconds=600,
+                          threshold=20,
+                          severity="critical"
+                      )
+                  ]
+
+                  for rule in rules:
+                      if event.event_type in rule.event_types:
+                          # Count events in time window
+                          cutoff = (datetime.now() - timedelta(seconds=rule.time_window_seconds)).timestamp()
+                          event_key = f"events:{event.source}:{event.event_type}"
+
+                          count = redis_client.zcount(event_key, cutoff, "+inf")
+
+                          if count >= rule.threshold:
+                              correlation = {
+                                  "rule": rule.name,
+                                  "description": rule.description,
+                                  "triggered": True,
+                                  "count": count,
+                                  "threshold": rule.threshold,
+                                  "severity": rule.severity,
+                                  "time_window": rule.time_window_seconds
+                              }
+                              correlations.append(correlation)
+
+                              # Store correlation alert
+                              alert_key = f"alerts:{rule.name}"
+                              alert_data = json.dumps({
+                                  "rule": rule.name,
+                                  "triggered_at": datetime.now().isoformat(),
+                                  "event_count": count,
+                                  "source": event.source
+                              })
+                              redis_client.zadd(alert_key, {alert_data: datetime.now().timestamp()})
+
+                  return correlations
+
+              @app.get("/events/{source}")
+              async def get_events(source: str, hours: int = 1):
+                  """Get recent events from a source"""
+                  cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+                  events = []
+
+                  # Get all event types for this source
+                  keys = redis_client.keys(f"events:{source}:*")
+
+                  for key in keys:
+                      event_type = key.split(":")[-1]
+                      raw_events = redis_client.zrangebyscore(key, cutoff, "+inf")
+
+                      for event_str in raw_events:
+                          event_data = json.loads(event_str)
+                          events.append(event_data)
+
+                  # Sort by timestamp
+                  events.sort(key=lambda x: x["timestamp"], reverse=True)
+
+                  return {
+                      "source": source,
+                      "hours": hours,
+                      "event_count": len(events),
+                      "events": events
+                  }
+
+              @app.get("/correlations")
+              async def get_correlations(hours: int = 1):
+                  """Get recent correlation alerts"""
+                  cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+                  alerts = []
+
+                  # Get all alert keys
+                  keys = redis_client.keys("alerts:*")
+
+                  for key in keys:
+                      rule_name = key.split(":")[-1]
+                      raw_alerts = redis_client.zrangebyscore(key, cutoff, "+inf")
+
+                      for alert_str in raw_alerts:
+                          alert_data = json.loads(alert_str)
+                          alerts.append(alert_data)
+
+                  # Sort by triggered_at
+                  alerts.sort(key=lambda x: x["triggered_at"], reverse=True)
+
+                  return {
+                      "hours": hours,
+                      "alert_count": len(alerts),
+                      "alerts": alerts
+                  }
+
+              @app.get("/stats")
+              async def get_stats():
+                  """Get correlation statistics"""
+                  stats = {
+                      "total_events": 0,
+                      "total_alerts": 0,
+                      "sources": [],
+                      "top_event_types": []
+                  }
+
+                  # Count events
+                  event_keys = redis_client.keys("events:*")
+                  for key in event_keys:
+                      count = redis_client.zcard(key)
+                      stats["total_events"] += count
+
+                  # Count alerts
+                  alert_keys = redis_client.keys("alerts:*")
+                  for key in alert_keys:
+                      count = redis_client.zcard(key)
+                      stats["total_alerts"] += count
+
+                  # Get unique sources
+                  sources = set()
+                  for key in event_keys:
+                      parts = key.split(":")
+                      if len(parts) >= 2:
+                          sources.add(parts[1])
+                  stats["sources"] = list(sources)
+
+                  return stats
+
+              @app.post("/rules")
+              async def add_rule(rule: CorrelationRule):
+                  """Add a new correlation rule (in-memory for now)"""
+                  # In production, store in database
+                  return {"status": "created", "rule": rule.name}
+              EOF
+
+              cd /app && python -m uvicorn app:app --host 0.0.0.0 --port 8080
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: REDIS_HOST
+              value: "csaf-redis"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-correlator
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-correlator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-redis
+  namespace: cortex-csaf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csaf-redis
+  template:
+    metadata:
+      labels:
+        app: csaf-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-redis
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
