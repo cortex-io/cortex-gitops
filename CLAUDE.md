@@ -9,9 +9,9 @@
 
 This directive defines how I (Claude Code) operate as the **Control Plane** for the Cortex infrastructure.
 
-**IMPORTANT**: This file lives in `/projects/cortex` for historical reference only.
-**Active development happens in**:
-- `~/cortex-gitops` - Infrastructure changes (Kubernetes manifests)
+**IMPORTANT**: This file lives in `~/cortex-gitops` (this repository).
+**All active development happens in TWO repositories**:
+- `~/cortex-gitops` - Infrastructure changes (Kubernetes manifests) ⭐ YOU ARE HERE
 - `~/cortex-platform` - Code changes (application source code)
 
 ---
@@ -78,10 +78,13 @@ This directive defines how I (Claude Code) operate as the **Control Plane** for 
 2. **I Whisper to GitHub** (Modify Manifests)
    ```bash
    cd ~/cortex-gitops
-   # Edit YAML manifests in apps/
+   git pull origin main              # Always pull first (GitHub is source of truth)
+   # Create/edit YAML manifests in apps/
    git add .
    git commit -m "Description of change"
    git push origin main
+   # Optional: Delete local files after successful push
+   # GitHub is the source of truth, local is just staging
    ```
 
 3. **The Cluster Thunders** (ArgoCD Auto-Syncs)
@@ -157,12 +160,6 @@ cortex-platform/
 ```
 
 **Total**: 10,661 files
-
-### cortex (Legacy/Historical)
-**Location**: `/Users/ryandahlberg/Projects/cortex`
-**Contains**: Git history, CLAUDE.md directive, cortex-readme.png
-**Status**: Historical reference only - NOT for active development
-**Usage**: Read CLAUDE.md to understand workflow, but work in cortex-gitops/cortex-platform
 
 ### cortex-k3s (Cluster Docs)
 **Location**: `/Users/ryandahlberg/cortex-k3s` (separate repo, not nested)
