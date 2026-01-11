@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n-mcp-server
+  namespace: cortex-system
+  labels:
+    app: n8n-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: n8n-mcp-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: n8n-mcp-server
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: setup-source
+        image: busybox
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p /repo/mcp_n8n
+          cp /source-server/server.py /repo/mcp_n8n/
+          cp /source-init/__init__.py /repo/mcp_n8n/
+          echo "Source files copied"
+          ls -laR /repo
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /source-server
+          name: source-server
+        - mountPath: /source-init
+          name: source-init
+      containers:
+      - name: app
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Installing dependencies..."
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 pydantic>=2.0.0
+
+          echo "Copying HTTP wrapper..."
+          cp /wrapper/mcp-http-wrapper.py /repo/wrapper.py
+
+          echo "Starting n8n MCP HTTP Server on port 3002..."
+          python /repo/wrapper.py
+        env:
+        - name: N8N_HOST
+          value: "10.88.140.104"
+        - name: N8N_PORT
+          value: "5678"
+        - name: N8N_API_KEY
+          value: "TODO_ADD_API_KEY"
+        - name: N8N_VERIFY_SSL
+          value: "false"
+        - name: MCP_COMMAND
+          value: "python -m mcp_n8n.server"
+        - name: PORT
+          value: "3002"
+        ports:
+        - containerPort: 3002
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3002
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3002
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /wrapper
+          name: http-wrapper
+        workingDir: /repo
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: repo
+        emptyDir: {}
+      - name: http-wrapper
+        configMap:
+          name: mcp-http-wrapper
+      - name: source-server
+        configMap:
+          name: n8n-mcp-server-py
+      - name: source-init
+        configMap:
+          name: n8n-mcp-init-py

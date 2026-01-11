@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-mcp
+  namespace: cortex-system
+  labels:
+    app: kubernetes-mcp-server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-mcp-reader
+  labels:
+    app: kubernetes-mcp-server
+rules:
+  # Core API resources
+  - apiGroups: [""]
+    resources: ["pods", "services", "namespaces", "nodes"]
+    verbs: ["get", "list"]
+  # Pod logs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # Apps API resources
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  # Batch API resources
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-mcp-reader-binding
+  labels:
+    app: kubernetes-mcp-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-mcp-reader
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-mcp
+    namespace: cortex-system

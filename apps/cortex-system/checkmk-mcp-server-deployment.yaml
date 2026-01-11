@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkmk-mcp-server
+  namespace: cortex-system
+  labels:
+    app: checkmk-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkmk-mcp-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: checkmk-mcp-server
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: setup-source
+        image: busybox
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p /repo/mcp_checkmk
+          cp /source-server/server.py /repo/mcp_checkmk/
+          cp /source-init/__init__.py /repo/mcp_checkmk/
+          echo "Source files copied"
+          ls -laR /repo
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /source-server
+          name: source-server
+        - mountPath: /source-init
+          name: source-init
+      containers:
+      - name: app
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Installing dependencies..."
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 pydantic>=2.0.0
+
+          echo "Copying HTTP wrapper..."
+          cp /wrapper/mcp-http-wrapper.py /repo/wrapper.py
+
+          echo "Starting CheckMK MCP HTTP Server on port 3000..."
+          python /repo/wrapper.py
+        env:
+        - name: CHECKMK_HOST
+          value: "10.88.140.103"
+        - name: CHECKMK_SITE
+          value: "cmk"
+        - name: CHECKMK_USERNAME
+          value: "automation"
+        - name: CHECKMK_PASSWORD
+          value: "TODO_ADD_PASSWORD"
+        - name: CHECKMK_VERIFY_SSL
+          value: "false"
+        - name: MCP_COMMAND
+          value: "python -m mcp_checkmk.server"
+        - name: PORT
+          value: "3000"
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /wrapper
+          name: http-wrapper
+        workingDir: /repo
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: repo
+        emptyDir: {}
+      - name: http-wrapper
+        configMap:
+          name: mcp-http-wrapper
+      - name: source-server
+        configMap:
+          name: checkmk-mcp-server-py
+      - name: source-init
+        configMap:
+          name: checkmk-mcp-init-py

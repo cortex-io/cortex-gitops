@@ -5,8 +5,9 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: 'true'
+    traefik.ingress.kubernetes.io/service.serversscheme: https
   labels:
-    app: sandfly-mcp-server
+    app: sandfly-web
   name: sandfly-ingress
   namespace: cortex-system
 spec:
@@ -17,9 +18,9 @@ spec:
       paths:
       - backend:
           service:
-            name: sandfly-mcp-server
+            name: sandfly-web
             port:
-              number: 3000
+              number: 443
         path: /
         pathType: Prefix
   tls:
