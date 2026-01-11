@@ -64,8 +64,8 @@ spec:
           value: 'false'
         - name: UNIFI_MCP_URL
           value: http://unifi-mcp-server.cortex-system.svc.cluster.local:3000
-        - name: WAZUH_MCP_URL
-          value: http://wazuh-mcp-server.cortex-system.svc.cluster.local:8080
+        - name: SANDFLY_MCP_URL
+          value: http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000
         - name: PROXMOX_MCP_URL
           value: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
         - name: MAX_ITERATIONS

@@ -91,10 +91,10 @@ spec:
             configMapKeyRef:
               key: PROXMOX_MCP_URL
               name: cortex-mcp-config
-        - name: WAZUH_MCP_URL
+        - name: SANDFLY_MCP_URL
           valueFrom:
             configMapKeyRef:
-              key: WAZUH_MCP_URL
+              key: SANDFLY_MCP_URL
               name: cortex-mcp-config
         - name: WORKER_POOL_SIZE
           valueFrom:
@@ -257,7 +257,7 @@ spec:
 
           cp /source/unifi.js /app/src/clients/
 
-          cp /source/wazuh.js /app/src/clients/
+          cp /source/sandfly.js /app/src/clients/
 
 
           # Copy tool files

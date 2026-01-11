@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cortex-mcp-config
+  namespace: cortex-system
+  labels:
+    app: cortex-mcp-server
+    component: mcp-gateway
+data:
+  HEALTH_PORT: "8080"
+  LOG_FORMAT: json
+  LOG_LEVEL: info
+  MAX_CONCURRENT_WORKERS: "100"
+  MCP_PORT: "3000"
+  MOE_ENABLED: "true"
+  MOE_STRATEGY: keyword_routing
+  NODE_ENV: production
+  PROXMOX_MCP_URL: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
+  UNIFI_MCP_URL: http://unifi-mcp-server.cortex-system.svc.cluster.local:3000
+  SANDFLY_MCP_URL: http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000
+  WORKER_POOL_SIZE: "10000"
+  WORKER_TIMEOUT_MINUTES: "60"

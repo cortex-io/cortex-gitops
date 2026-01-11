@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: 'true'
+  labels:
+    app: sandfly-mcp-server
+  name: sandfly-ingress
+  namespace: cortex-system
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: sandfly.ry-ops.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: sandfly-mcp-server
+            port:
+              number: 3000
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - sandfly.ry-ops.dev
+    secretName: sandfly-tls
