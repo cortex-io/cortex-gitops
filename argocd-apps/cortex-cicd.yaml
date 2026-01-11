@@ -1,19 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cortex-chat
+  name: cortex-cicd
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
     repoURL: https://github.com/ry-ops/cortex-gitops.git
     targetRevision: main
-    path: apps/cortex-chat
+    path: apps/cortex-cicd
   destination:
     server: https://kubernetes.default.svc
-    namespace: cortex-chat
+    namespace: cortex-cicd
   syncPolicy:
     automated:
       prune: true

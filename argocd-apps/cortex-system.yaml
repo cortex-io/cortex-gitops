@@ -16,7 +16,7 @@ spec:
     namespace: cortex-system
   syncPolicy:
     automated:
-      prune: false  # Start with false, enable after validation
-      selfHeal: false  # Start with false, enable after validation
+      prune: true  # Start with false, enable after validation
+      selfHeal: true  # Start with false, enable after validation
     syncOptions:
       - CreateNamespace=false  # Namespace already exists
