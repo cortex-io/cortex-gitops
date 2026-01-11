@@ -28,6 +28,7 @@ spec:
       labels:
         app: cortex-desktop-mcp
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - env:
         - name: PORT
@@ -64,6 +65,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         name: mcp-server
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8765
           name: http
@@ -93,4 +101,3 @@ spec:
       securityContext: {}
       serviceAccount: cortex-desktop-mcp
       serviceAccountName: cortex-desktop-mcp
-      terminationGracePeriodSeconds: 30

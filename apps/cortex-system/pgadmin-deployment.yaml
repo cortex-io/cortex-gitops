@@ -25,6 +25,7 @@ spec:
       labels:
         app: pgadmin
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - env:
         - name: PGADMIN_DEFAULT_EMAIL
@@ -38,10 +39,36 @@ spec:
         image: dpage/pgadmin4:latest
         imagePullPolicy: Always
         name: pgadmin
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 80
           name: http
           protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: 500m
@@ -55,4 +82,3 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30

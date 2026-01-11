@@ -28,6 +28,7 @@ spec:
       labels:
         app: cortex-orchestrator
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - command:
         - /bin/sh
@@ -72,10 +73,36 @@ spec:
         image: 10.43.170.72:5000/cortex-api:latest
         imagePullPolicy: Always
         name: cortex-api
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8000
           name: http
           protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: 500m
@@ -94,7 +121,6 @@ spec:
       securityContext: {}
       serviceAccount: cortex-api
       serviceAccountName: cortex-api
-      terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
           defaultMode: 493

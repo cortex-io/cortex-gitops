@@ -51,6 +51,7 @@ spec:
               topologyKey: kubernetes.io/hostname
             weight: 1
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
       containers:
       - env:
         - name: BITNAMI_DEBUG
@@ -95,6 +96,15 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: postgresql
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # Graceful shutdown
+                su - postgres -c "pg_ctl stop -D $PGDATA -m fast"
         ports:
         - containerPort: 5432
           name: tcp-postgresql
@@ -164,7 +174,6 @@ spec:
         fsGroupChangePolicy: Always
       serviceAccount: postgres-postgresql
       serviceAccountName: postgres-postgresql
-      terminationGracePeriodSeconds: 30
       volumes:
       - emptyDir: {}
         name: empty-dir

@@ -26,6 +26,7 @@ spec:
       labels:
         app: docling-service
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - "echo \"Docling service placeholder - image build pending\"\necho \"Install\
@@ -54,6 +55,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         name: docling
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8000
           name: http
@@ -81,4 +89,3 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30

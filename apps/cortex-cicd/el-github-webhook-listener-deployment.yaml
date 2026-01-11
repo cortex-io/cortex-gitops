@@ -40,6 +40,7 @@ spec:
         app.kubernetes.io/part-of: Triggers
         eventlistener: github-webhook-listener
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - --el-name=github-webhook-listener
@@ -102,6 +103,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         name: event-listener
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8080
           protocol: TCP
@@ -148,4 +156,3 @@ spec:
           type: RuntimeDefault
       serviceAccount: tekton-triggers-sa
       serviceAccountName: tekton-triggers-sa
-      terminationGracePeriodSeconds: 30

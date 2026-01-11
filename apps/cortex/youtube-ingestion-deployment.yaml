@@ -29,6 +29,7 @@ spec:
         app: youtube-ingestion
         component: knowledge
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - env:
         - name: PORT
@@ -63,6 +64,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: youtube-ingestion
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8080
           name: http
@@ -111,7 +119,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
           defaultMode: 420

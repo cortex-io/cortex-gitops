@@ -31,6 +31,7 @@ spec:
         app: trivy-server
         cortex.ai/component: security-monitoring
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - server
@@ -62,6 +63,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         name: trivy
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 4954
           name: http
@@ -99,7 +107,6 @@ spec:
       securityContext: {}
       serviceAccount: trivy-scanner
       serviceAccountName: trivy-scanner
-      terminationGracePeriodSeconds: 30
       tolerations:
       - effect: NoSchedule
         operator: Exists

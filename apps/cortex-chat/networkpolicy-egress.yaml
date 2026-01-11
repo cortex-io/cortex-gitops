@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress
+  namespace: cortex-chat
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow internal cluster communication
+  - to:
+    - podSelector: {}
+  # Allow to cortex-system (for postgres)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: cortex-system
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow to other namespaces
+  - to:
+    - namespaceSelector: {}
+  # Allow external HTTPS/HTTP
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

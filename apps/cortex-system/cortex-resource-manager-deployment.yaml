@@ -26,6 +26,7 @@ spec:
       labels:
         app: cortex-resource-manager
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - 'set -e
@@ -53,6 +54,34 @@ spec:
         image: python:3.11-slim
         imagePullPolicy: IfNotPresent
         name: app
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q 'tail -f'"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q 'tail -f'"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
@@ -80,7 +109,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
       - emptyDir: {}
         name: repo

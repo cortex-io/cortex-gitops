@@ -28,6 +28,7 @@ spec:
         app: redis-queue
         component: task-queue
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - command:
         - redis-server
@@ -51,6 +52,16 @@ spec:
             port: 6379
           timeoutSeconds: 1
         name: redis
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # Force save and shutdown
+                redis-cli SAVE
+                redis-cli SHUTDOWN SAVE
         ports:
         - containerPort: 6379
           name: redis
@@ -81,7 +92,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
       - name: redis-data
         persistentVolumeClaim:

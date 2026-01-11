@@ -36,6 +36,7 @@ spec:
         component: mcp-gateway
         version: v1
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - command:
         - sh
@@ -158,6 +159,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: cortex-mcp-server
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 3000
           name: mcp
@@ -304,7 +312,6 @@ spec:
       securityContext: {}
       serviceAccount: cortex-mcp-server
       serviceAccountName: cortex-mcp-server
-      terminationGracePeriodSeconds: 30
       volumes:
       - emptyDir: {}
         name: workspace

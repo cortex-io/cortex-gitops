@@ -32,10 +32,36 @@ spec:
         image: prometheuscommunity/postgres-exporter:latest
         imagePullPolicy: Always
         name: postgres-exporter
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 9187
           name: metrics
           protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9187
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9187
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: 200m

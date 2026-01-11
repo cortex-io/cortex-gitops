@@ -30,6 +30,7 @@ spec:
         app: cortex-queue-worker
         component: task-processor
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - env:
         - name: REDIS_HOST
@@ -48,6 +49,34 @@ spec:
         image: 10.43.170.72:5000/cortex-queue-worker:latest
         imagePullPolicy: Always
         name: worker
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "test -f /tmp/worker-ready"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q worker"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: '1'
@@ -64,7 +93,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
       - emptyDir: {}
         name: tasks-storage

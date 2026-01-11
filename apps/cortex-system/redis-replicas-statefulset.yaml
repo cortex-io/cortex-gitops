@@ -55,6 +55,7 @@ spec:
               topologyKey: kubernetes.io/hostname
             weight: 1
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - -ec
@@ -96,6 +97,16 @@ spec:
           successThreshold: 1
           timeoutSeconds: 6
         name: redis
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # Force save and shutdown
+                redis-cli SAVE
+                redis-cli SHUTDOWN SAVE
         ports:
         - containerPort: 6379
           name: redis
@@ -168,7 +179,6 @@ spec:
         fsGroupChangePolicy: Always
       serviceAccount: redis-replica
       serviceAccountName: redis-replica
-      terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
           defaultMode: 493

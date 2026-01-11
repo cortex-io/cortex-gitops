@@ -26,6 +26,7 @@ spec:
       labels:
         app: auto-fix-daemon
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - "#!/bin/bash\nset -e\n\necho \"[Auto-Fix] Starting daemon...\"\necho \"\
@@ -73,6 +74,34 @@ spec:
         image: bitnami/kubectl:latest
         imagePullPolicy: Always
         name: auto-fix
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q bash"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q bash"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
@@ -82,4 +111,3 @@ spec:
       securityContext: {}
       serviceAccount: cortex-cleanup-sa
       serviceAccountName: cortex-cleanup-sa
-      terminationGracePeriodSeconds: 30

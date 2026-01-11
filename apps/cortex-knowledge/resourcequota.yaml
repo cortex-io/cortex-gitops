@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: cortex-knowledge-quota
+  namespace: cortex-knowledge
+spec:
+  hard:
+    requests.cpu: "12"
+    requests.memory: 24Gi
+    limits.cpu: "24"
+    limits.memory: 48Gi
+    persistentvolumeclaims: "15"
+    pods: "60"
+    services: "40"
+    configmaps: "40"
+    secrets: "40"

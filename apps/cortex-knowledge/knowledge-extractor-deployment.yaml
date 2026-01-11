@@ -26,6 +26,13 @@ spec:
         app: knowledge-extractor
         itil-component: knowledge-extraction
     spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - args:
         - "pip install --no-cache-dir \\\n  kubernetes \\\n  pymongo \\\n  elasticsearch\
@@ -41,6 +48,34 @@ spec:
         image: python:3.11-slim
         imagePullPolicy: IfNotPresent
         name: extractor
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q python"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q python"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: '1'
@@ -48,6 +83,12 @@ spec:
           requests:
             cpu: 250m
             memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -57,14 +98,16 @@ spec:
           name: app
         - mountPath: /workspace
           name: workspace
+        - name: tmp
+          mountPath: /tmp
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
-      securityContext: {}
       serviceAccount: knowledge-extractor
       serviceAccountName: knowledge-extractor
-      terminationGracePeriodSeconds: 30
       volumes:
+      - name: tmp
+        emptyDir: {}
       - configMap:
           defaultMode: 420
           name: knowledge-extraction-config

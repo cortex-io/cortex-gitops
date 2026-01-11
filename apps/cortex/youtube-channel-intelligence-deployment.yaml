@@ -27,6 +27,7 @@ spec:
         app: youtube-channel-intelligence
         component: knowledge
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - env:
         - name: PORT
@@ -65,6 +66,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: youtube-channel-intelligence
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8081
           name: http
@@ -92,4 +100,3 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30

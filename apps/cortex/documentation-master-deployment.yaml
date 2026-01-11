@@ -27,6 +27,7 @@ spec:
       labels:
         app: documentation-master
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - command:
         - /bin/sh
@@ -47,6 +48,13 @@ spec:
         image: alpine:latest
         imagePullPolicy: Always
         name: doc-master
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8080
           name: http
@@ -54,6 +62,25 @@ spec:
         - containerPort: 9090
           name: metrics
           protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: 500m
@@ -74,7 +101,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
       - name: kb-storage
         persistentVolumeClaim:

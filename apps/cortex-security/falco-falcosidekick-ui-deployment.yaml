@@ -41,6 +41,7 @@ spec:
         app.kubernetes.io/version: 2.31.1
         helm.sh/chart: falcosidekick-0.11.1
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - -r
@@ -63,6 +64,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         name: falcosidekick-ui
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 2802
           name: http
@@ -106,7 +114,6 @@ spec:
         runAsUser: 1234
       serviceAccount: falco-falcosidekick-ui
       serviceAccountName: falco-falcosidekick-ui
-      terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
           defaultMode: 365

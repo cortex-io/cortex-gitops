@@ -13,9 +13,17 @@ spec:
       labels:
         app: cost-tracker
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
         - name: cost-tracker
           image: python:3.12-alpine
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                - /bin/sh
+                - -c
+                - sleep 15
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -175,6 +183,25 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           env:
             - name: REDIS_HOST
               value: "redis-queue.cortex.svc.cluster.local"

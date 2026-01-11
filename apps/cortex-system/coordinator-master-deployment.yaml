@@ -28,6 +28,7 @@ spec:
         app: coordinator-master
         role: master-agent
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - args:
         - "apk add --no-cache kubectl git curl jq\n\necho \"=== Coordinator Master\
@@ -46,6 +47,34 @@ spec:
         image: python:3.12-alpine
         imagePullPolicy: IfNotPresent
         name: coordinator
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q sleep"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q sleep"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: '1'
@@ -61,4 +90,3 @@ spec:
       securityContext: {}
       serviceAccount: cortex-master-agents
       serviceAccountName: cortex-master-agents
-      terminationGracePeriodSeconds: 30

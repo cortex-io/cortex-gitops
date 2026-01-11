@@ -26,6 +26,13 @@ spec:
         app: knowledge-graph-api
         itil-component: knowledge-graph
     spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - args:
         - "pip install --no-cache-dir \\\n  fastapi \\\n  uvicorn \\\n  neo4j \\\n\
@@ -43,11 +50,37 @@ spec:
         image: python:3.11-slim
         imagePullPolicy: IfNotPresent
         name: api
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8000
           protocol: TCP
         - containerPort: 9091
           protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           limits:
             cpu: 500m
@@ -55,17 +88,25 @@ spec:
           requests:
             cpu: 100m
             memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
         - mountPath: /app
           name: app
+        - name: tmp
+          mountPath: /tmp
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
-      securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
+      - name: tmp
+        emptyDir: {}
       - configMap:
           defaultMode: 420
           name: knowledge-graph-api-app

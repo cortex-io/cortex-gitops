@@ -43,6 +43,7 @@ spec:
         app.kubernetes.io/version: 2.31.1
         helm.sh/chart: falcosidekick-0.11.1
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
       - env:
         - name: DEBUG
@@ -74,6 +75,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         name: falcosidekick
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 2801
           name: http
@@ -89,14 +97,28 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext:
-        fsGroup: 1234
+        runAsNonRoot: true
         runAsUser: 1234
+        fsGroup: 1234
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccount: falco-falcosidekick
       serviceAccountName: falco-falcosidekick
-      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: tmp
+        emptyDir: {}

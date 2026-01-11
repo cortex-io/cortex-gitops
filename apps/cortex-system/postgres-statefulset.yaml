@@ -26,6 +26,7 @@ spec:
         app: postgres
         component: database
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
       - env:
         - name: POSTGRES_DB
@@ -62,6 +63,15 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: postgres
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # Graceful shutdown
+                su - postgres -c "pg_ctl stop -D $PGDATA -m fast"
         ports:
         - containerPort: 5432
           name: postgres
@@ -98,7 +108,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
           defaultMode: 420

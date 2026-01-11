@@ -29,6 +29,13 @@ spec:
         app: repo-context
         component: cortex-coding-agent
     spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - command:
         - /bin/sh
@@ -61,6 +68,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: repo-context
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
         ports:
         - containerPort: 8080
           name: http
@@ -82,6 +96,12 @@ spec:
           requests:
             cpu: 50m
             memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -91,6 +111,8 @@ spec:
           name: numpy-fix
         - mountPath: /scripts
           name: code-fix
+        - name: tmp
+          mountPath: /tmp
       dnsPolicy: ClusterFirst
       initContainers:
       - args:
@@ -102,16 +124,24 @@ spec:
         imagePullPolicy: Always
         name: fix-numpy
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
         - mountPath: /numpy-fix
           name: numpy-fix
+        - name: tmp
+          mountPath: /tmp
       restartPolicy: Always
       schedulerName: default-scheduler
-      securityContext: {}
-      terminationGracePeriodSeconds: 30
       volumes:
+      - name: tmp
+        emptyDir: {}
       - name: chroma-data
         persistentVolumeClaim:
           claimName: repo-context-pvc

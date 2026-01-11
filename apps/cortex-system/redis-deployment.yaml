@@ -40,6 +40,16 @@ spec:
             port: 6379
           timeoutSeconds: 1
         name: redis
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # Force save and shutdown
+                redis-cli SAVE
+                redis-cli SHUTDOWN SAVE
         ports:
         - containerPort: 6379
           name: redis
