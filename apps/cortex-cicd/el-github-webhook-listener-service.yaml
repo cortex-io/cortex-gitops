@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app.kubernetes.io/name: el-github-webhook-listener
+    app.kubernetes.io/part-of: cortex-cicd
+  name: el-github-webhook-listener
+  namespace: cortex-cicd
+spec:
+  clusterIP: 10.43.44.101
+  clusterIPs:
+  - 10.43.44.101
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    eventlistener: github-webhook-listener
+  sessionAffinity: None
+  type: ClusterIP

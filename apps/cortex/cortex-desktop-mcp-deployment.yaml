@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '9'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.216"],"port":8765,"protocol":"TCP","serviceName":"cortex:cortex-desktop-mcp","allNodes":false}]'
+  labels:
+    app: cortex-desktop-mcp
+  name: cortex-desktop-mcp
+  namespace: cortex
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: cortex-desktop-mcp
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-01-06T06:58:56-06:00'
+      creationTimestamp: null
+      labels:
+        app: cortex-desktop-mcp
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: '8765'
+        - name: CORTEX_URL
+          value: http://cortex-orchestrator.cortex.svc.cluster.local:8000
+        - name: REDIS_HOST
+          value: redis.cortex-system.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: anthropic-api-key
+              name: cortex-desktop-mcp-secret
+        - name: PROXMOX_MCP_URL
+          value: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
+        - name: UNIFI_MCP_URL
+          value: http://unifi-mcp-server.cortex-system.svc.cluster.local:3000
+        - name: SANDFLY_MCP_URL
+          value: http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000
+        - name: CLOUDFLARE_MCP_URL
+          value: http://cloudflare-mcp-server.cortex-system.svc.cluster.local:3000
+        image: 10.43.170.72:5000/cortex-desktop-mcp:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8765
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: mcp-server
+        ports:
+        - containerPort: 8765
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8765
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: cortex-desktop-mcp
+      serviceAccountName: cortex-desktop-mcp
+      terminationGracePeriodSeconds: 30

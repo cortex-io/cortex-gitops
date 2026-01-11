@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    argocd.argoproj.io/tracking-id: cortex-system:apps/StatefulSet:cortex-system/redis-master
     meta.helm.sh/release-name: redis
     meta.helm.sh/release-namespace: cortex-system
   labels:

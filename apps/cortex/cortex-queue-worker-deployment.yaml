@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    argocd.argoproj.io/tracking-id: cortex-core:apps/Deployment:cortex/cortex-queue-worker
     deployment.kubernetes.io/revision: '2'
   labels:
     app: cortex-queue-worker

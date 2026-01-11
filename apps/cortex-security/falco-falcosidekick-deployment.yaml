@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '1'
+    meta.helm.sh/release-name: falco
+    meta.helm.sh/release-namespace: cortex-security
+  labels:
+    app.kubernetes.io/component: core
+    app.kubernetes.io/instance: falco
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: falcosidekick
+    app.kubernetes.io/part-of: falcosidekick
+    app.kubernetes.io/version: 2.31.1
+    helm.sh/chart: falcosidekick-0.11.1
+  name: falco-falcosidekick
+  namespace: cortex-security
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: core
+      app.kubernetes.io/instance: falco
+      app.kubernetes.io/name: falcosidekick
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        checksum/config: 2ff16ad72d2a1026561662ec4b2a2d525ebd4eec54ebcf348706e629d158f278
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/component: core
+        app.kubernetes.io/instance: falco
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: falcosidekick
+        app.kubernetes.io/part-of: falcosidekick
+        app.kubernetes.io/version: 2.31.1
+        helm.sh/chart: falcosidekick-0.11.1
+    spec:
+      containers:
+      - env:
+        - name: DEBUG
+          value: 'false'
+        - name: CUSTOMFIELDS
+        - name: TEMPLATEDFIELDS
+        - name: CUSTOMTAGS
+        - name: OUTPUTFIELDFORMAT
+        - name: BRACKETREPLACER
+        - name: MUTUALTLSFILESPATH
+          value: /etc/certs
+        - name: MUTUALTLSCLIENT_CERTFILE
+        - name: MUTUALTLSCLIENT_KEYFILE
+        - name: MUTUALTLSCLIENT_CACERTFILE
+        - name: TLSCLIENT_CACERTFILE
+        envFrom:
+        - secretRef:
+            name: falco-falcosidekick
+        image: docker.io/falcosecurity/falcosidekick:2.32.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ping
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: falcosidekick
+        ports:
+        - containerPort: 2801
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ping
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1234
+        runAsUser: 1234
+      serviceAccount: falco-falcosidekick
+      serviceAccountName: falco-falcosidekick
+      terminationGracePeriodSeconds: 30

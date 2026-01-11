@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":80,"protocol":"HTTP","serviceName":"cortex:cm-acme-http-solver-hsgsx","ingressName":"cortex:cm-acme-http-solver-xqqjd","hostname":"cortex-api.ry-ops.dev","path":"/.well-known/acme-challenge/UWVefzctK-VCFNg9lMpMp0vc17RRUUe8VmJ4vCNKfBs","allNodes":false}]'
+    kubernetes.io/ingress.class: traefik
+    nginx.ingress.kubernetes.io/whitelist-source-range: 0.0.0.0/0,::/0
+  generateName: cm-acme-http-solver-
+  labels:
+    acme.cert-manager.io/http-domain: '1499662338'
+    acme.cert-manager.io/http-token: '1074925140'
+    acme.cert-manager.io/http01-solver: 'true'
+  name: cm-acme-http-solver-xqqjd
+  namespace: cortex
+  ownerReferences:
+  - apiVersion: acme.cert-manager.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Challenge
+    name: cortex-api-tls-1-181336435-531462493
+    uid: 361c8780-5e22-4cad-bf47-4fd0d9daa616
+spec:
+  rules:
+  - host: cortex-api.ry-ops.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: cm-acme-http-solver-hsgsx
+            port:
+              number: 8089
+        path: /.well-known/acme-challenge/UWVefzctK-VCFNg9lMpMp0vc17RRUUe8VmJ4vCNKfBs
+        pathType: ImplementationSpecific

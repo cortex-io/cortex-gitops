@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '18'
+  labels:
+    app: youtube-ingestion
+    component: knowledge
+  name: youtube-ingestion
+  namespace: cortex
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: youtube-ingestion
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-01-09T19:50:33-06:00'
+      creationTimestamp: null
+      labels:
+        app: youtube-ingestion
+        component: knowledge
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: '8080'
+        - name: REDIS_HOST
+          value: redis-queue.cortex.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: REDIS_ENABLED
+          value: 'true'
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: api-key
+              name: anthropic-api-key
+        - name: TRANSCRIPTS_DIR
+          value: /data/transcripts
+        - name: KNOWLEDGE_DIR
+          value: /data/knowledge
+        - name: CACHE_DIR
+          value: /data/cache
+        image: 10.43.170.72:5000/youtube-ingestion:cached
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: youtube-ingestion
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 192Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/src/storage/knowledge-store.js
+          name: knowledge-store-code
+          subPath: knowledge-store.js
+        - mountPath: /data
+          name: youtube-data
+        - mountPath: /app/extract_transcript.py
+          name: fixes
+          subPath: extract_transcript.py
+        - mountPath: /app/src/processors/classifier.js
+          name: fixes
+          subPath: classifier.js
+        - mountPath: /app/src/ingestion-service.js
+          name: fixes
+          subPath: ingestion-service.js
+        - mountPath: /app/src/index.js
+          name: index-fix
+          subPath: index.js
+        - mountPath: /app/src/learning-tracker.js
+          name: learning-tracker
+          subPath: learning-tracker.js
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: youtube-knowledge-store-code
+        name: knowledge-store-code
+      - name: youtube-data
+        persistentVolumeClaim:
+          claimName: youtube-data-pvc
+      - configMap:
+          defaultMode: 420
+          name: youtube-ingestion-fixes
+        name: fixes
+      - configMap:
+          defaultMode: 420
+          name: youtube-index-fixed
+        name: index-fix
+      - configMap:
+          defaultMode: 420
+          name: youtube-ingestion-learning-tracker
+        name: learning-tracker

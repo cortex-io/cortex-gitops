@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    auth.istio.io/8089: NONE
+    field.cattle.io/publicEndpoints: '[{"port":30255,"protocol":"TCP","serviceName":"cortex-chat:cm-acme-http-solver-q25qg","allNodes":true}]'
+  generateName: cm-acme-http-solver-
+  labels:
+    acme.cert-manager.io/http-domain: '2185431511'
+    acme.cert-manager.io/http-token: '1011224092'
+    acme.cert-manager.io/http01-solver: 'true'
+  name: cm-acme-http-solver-q25qg
+  namespace: cortex-chat
+  ownerReferences:
+  - apiVersion: acme.cert-manager.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Challenge
+    name: grafana-pdf-tls-1-1067167626-2803229905
+    uid: db5db3ea-3b93-4ab5-9887-6023867ecdce
+spec:
+  clusterIP: 10.43.207.3
+  clusterIPs:
+  - 10.43.207.3
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    nodePort: 30255
+    port: 8089
+    protocol: TCP
+    targetPort: 8089
+  selector:
+    acme.cert-manager.io/http-domain: '2185431511'
+    acme.cert-manager.io/http-token: '1011224092'
+    acme.cert-manager.io/http01-solver: 'true'
+  sessionAffinity: None
+  type: NodePort

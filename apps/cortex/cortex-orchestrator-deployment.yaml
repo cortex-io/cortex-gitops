@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '72'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex:cortex-orchestrator","ingressName":"cortex:cortex-api-ingress","hostname":"cortex-api.ry-ops.dev","path":"/","allNodes":false}]'
+  labels:
+    app: cortex-orchestrator
+  name: cortex-orchestrator
+  namespace: cortex
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: cortex-orchestrator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-01-06T18:07:19-06:00'
+      creationTimestamp: null
+      labels:
+        app: cortex-orchestrator
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - /patch/patch.sh
+        env:
+        - name: ANTHROPIC_API_KEY
+          value: "REDACTED-USE-KUBERNETES-SECRET"
+        - name: SANDFLY_HOST
+          value: 10.88.140.176
+        - name: SANDFLY_USERNAME
+          value: admin
+        - name: SANDFLY_PASSWORD
+          value: emphasize-art-nibble-arguable-paradox-flick-unpack
+        - name: PROXMOX_HOST
+          value: 10.88.140.21
+        - name: PROXMOX_PORT
+          value: '8006'
+        - name: PROXMOX_USERNAME
+          value: root@pam
+        - name: PROXMOX_PASSWORD
+          value: toor
+        - name: UNIFI_HOST
+          value: 10.88.140.16
+        - name: UNIFI_PORT
+          value: '443'
+        - name: UNIFI_USERNAME
+          value: cortex
+        - name: UNIFI_PASSWORD
+          value: cortex
+        - name: UNIFI_SITE
+          value: default
+        - name: UNIFI_IS_UDM
+          value: 'false'
+        - name: UNIFI_MCP_URL
+          value: http://unifi-mcp-server.cortex-system.svc.cluster.local:3000
+        - name: WAZUH_MCP_URL
+          value: http://wazuh-mcp-server.cortex-system.svc.cluster.local:8080
+        - name: PROXMOX_MCP_URL
+          value: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
+        - name: MAX_ITERATIONS
+          value: '50'
+        image: 10.43.170.72:5000/cortex-api:latest
+        imagePullPolicy: Always
+        name: cortex-api
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /patch
+          name: patch-script
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: cortex-api
+      serviceAccountName: cortex-api
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 493
+          name: cortex-api-patch
+        name: patch-script

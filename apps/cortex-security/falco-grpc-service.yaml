@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    meta.helm.sh/release-name: falco
+    meta.helm.sh/release-namespace: cortex-security
+  labels:
+    app.kubernetes.io/instance: falco
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: falco
+    app.kubernetes.io/version: 0.42.1
+    helm.sh/chart: falco-7.0.5
+  name: falco-grpc
+  namespace: cortex-security
+spec:
+  clusterIP: None
+  clusterIPs:
+  - None
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 5060
+    protocol: TCP
+    targetPort: 5060
+  selector:
+    app.kubernetes.io/instance: falco
+    app.kubernetes.io/name: falco
+  sessionAffinity: None
+  type: ClusterIP

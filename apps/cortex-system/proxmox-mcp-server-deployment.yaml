@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    argocd.argoproj.io/tracking-id: cortex-system:apps/Deployment:cortex-system/proxmox-mcp-server
     deployment.kubernetes.io/revision: '20'
   labels:
     app: proxmox-mcp-server

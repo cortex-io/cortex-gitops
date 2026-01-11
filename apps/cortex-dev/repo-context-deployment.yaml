@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '21'
+  labels:
+    app: repo-context
+    component: cortex-coding-agent
+  name: repo-context
+  namespace: cortex-dev
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 0
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: repo-context
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-01-10T13:57:28Z'
+      creationTimestamp: null
+      labels:
+        app: repo-context
+        component: cortex-coding-agent
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - /scripts/fix-chromadb.sh
+        env:
+        - name: PORT
+          value: '8080'
+        - name: REDIS_HOST
+          value: redis-service.cortex-dev.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        - name: CHROMA_PERSIST_DIR
+          value: /data/chromadb
+        - name: PIP_CONSTRAINT
+          value: numpy<2.0
+        - name: NUMPY_VERSION
+          value: <2.0
+        - name: PYTHONPATH
+          value: /numpy-fix:/usr/local/lib/python3.11/site-packages
+        image: 10.43.170.72:5000/repo-context:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: repo-context
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: chroma-data
+        - mountPath: /numpy-fix
+          name: numpy-fix
+        - mountPath: /scripts
+          name: code-fix
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - args:
+        - pip install --upgrade --force-reinstall "numpy<2.0" --target /numpy-fix
+        command:
+        - /bin/sh
+        - -c
+        image: 10.43.170.72:5000/repo-context:latest
+        imagePullPolicy: Always
+        name: fix-numpy
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /numpy-fix
+          name: numpy-fix
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: chroma-data
+        persistentVolumeClaim:
+          claimName: repo-context-pvc
+      - emptyDir: {}
+        name: numpy-fix
+      - configMap:
+          defaultMode: 493
+          name: repo-context-code-fix
+        name: code-fix

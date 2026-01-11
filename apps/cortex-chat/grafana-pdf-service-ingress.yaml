@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:grafana-pdf-service","hostname":"cortex-reports.ry-ops.dev","path":"/","allNodes":false}]'
+  name: grafana-pdf-service
+  namespace: cortex-chat
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: cortex-reports.ry-ops.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: grafana-pdf-service
+            port:
+              number: 3001
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - cortex-reports.ry-ops.dev
+    secretName: grafana-pdf-tls

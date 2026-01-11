@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.216"],"port":8765,"protocol":"TCP","serviceName":"cortex:cortex-desktop-mcp","allNodes":false}]'
+    metallb.io/ip-allocated-from-pool: default-pool
+    metallb.universe.tf/loadBalancerIPs: 10.88.145.216
+  name: cortex-desktop-mcp
+  namespace: cortex
+spec:
+  allocateLoadBalancerNodePorts: true
+  clusterIP: 10.43.20.235
+  clusterIPs:
+  - 10.43.20.235
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    nodePort: 32021
+    port: 8765
+    protocol: TCP
+    targetPort: 8765
+  selector:
+    app: cortex-desktop-mcp
+  sessionAffinity: None
+  type: LoadBalancer

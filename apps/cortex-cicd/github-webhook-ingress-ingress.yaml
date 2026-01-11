@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+  labels:
+    app.kubernetes.io/name: github-webhook-ingress
+    app.kubernetes.io/part-of: cortex-cicd
+  name: github-webhook-ingress
+  namespace: cortex-cicd
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: tekton-webhooks.cortex.local
+    http:
+      paths:
+      - backend:
+          service:
+            name: el-github-webhook-listener
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - tekton-webhooks.cortex.local
+    secretName: tekton-webhooks-tls

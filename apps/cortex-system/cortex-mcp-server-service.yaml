@@ -1,7 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
-  annotations: {}
+  annotations:
+    argocd.argoproj.io/tracking-id: cortex-system:/Service:cortex-system/cortex-mcp-server
   labels:
     app: cortex-mcp-server
     component: mcp-gateway

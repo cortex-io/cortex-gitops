@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":80,"protocol":"HTTP","serviceName":"cortex-chat:cm-acme-http-solver-q25qg","ingressName":"cortex-chat:cm-acme-http-solver-s2cdr","hostname":"cortex-reports.ry-ops.dev","path":"/.well-known/acme-challenge/9Ios5UeimQrfIlLB1Qx0gTSU4pSKAY11VVlUMpmKRO8","allNodes":false}]'
+    kubernetes.io/ingress.class: traefik
+    nginx.ingress.kubernetes.io/whitelist-source-range: 0.0.0.0/0,::/0
+  generateName: cm-acme-http-solver-
+  labels:
+    acme.cert-manager.io/http-domain: '2185431511'
+    acme.cert-manager.io/http-token: '1011224092'
+    acme.cert-manager.io/http01-solver: 'true'
+  name: cm-acme-http-solver-s2cdr
+  namespace: cortex-chat
+  ownerReferences:
+  - apiVersion: acme.cert-manager.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Challenge
+    name: grafana-pdf-tls-1-1067167626-2803229905
+    uid: db5db3ea-3b93-4ab5-9887-6023867ecdce
+spec:
+  rules:
+  - host: cortex-reports.ry-ops.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: cm-acme-http-solver-q25qg
+            port:
+              number: 8089
+        path: /.well-known/acme-challenge/9Ios5UeimQrfIlLB1Qx0gTSU4pSKAY11VVlUMpmKRO8
+        pathType: ImplementationSpecific

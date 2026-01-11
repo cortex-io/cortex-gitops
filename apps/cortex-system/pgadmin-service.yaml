@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: pgadmin
+  name: pgadmin
+  namespace: cortex-system
+spec:
+  clusterIP: 10.43.27.208
+  clusterIPs:
+  - 10.43.27.208
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: pgadmin
+  sessionAffinity: None
+  type: ClusterIP

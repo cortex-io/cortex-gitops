@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: docling-service
+  name: docling-service
+  namespace: cortex-system
+spec:
+  clusterIP: 10.43.175.238
+  clusterIPs:
+  - 10.43.175.238
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: docling-service
+  sessionAffinity: None
+  type: ClusterIP

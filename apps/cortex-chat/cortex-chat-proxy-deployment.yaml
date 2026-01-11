@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    argocd.argoproj.io/tracking-id: cortex-chat:apps/Deployment:cortex-chat/cortex-chat-proxy
     deployment.kubernetes.io/revision: '6'
   name: cortex-chat-proxy
   namespace: cortex-chat

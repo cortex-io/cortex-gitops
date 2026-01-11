@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '1'
+  labels:
+    app: zombie-cleanup-daemon
+    cortex.component: automation
+  name: zombie-cleanup-daemon
+  namespace: cortex-system
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: zombie-cleanup-daemon
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: zombie-cleanup-daemon
+    spec:
+      containers:
+      - args:
+        - "#!/bin/bash\nset -e\n\necho \"[Zombie Cleanup] Starting daemon...\"\necho\
+          \ \"[Zombie Cleanup] Check interval: 60 seconds\"\n\nwhile true; do\n  echo\
+          \ \"[$(date)] Checking for zombie pods...\"\n\n  # Find Unknown pods older\
+          \ than 5 minutes\n  UNKNOWN_PODS=$(kubectl get pods -A --field-selector\
+          \ status.phase=Unknown -o json | \\\n    jq -r '.items[] | select(.metadata.creationTimestamp\
+          \ | . as $t | (now - ($t | fromdateiso8601)) > 300) | \"\\(.metadata.namespace)/\\\
+          (.metadata.name)\"')\n\n  if [ -n \"$UNKNOWN_PODS\" ]; then\n    echo \"\
+          [Zombie Cleanup] Found zombie pods:\"\n    echo \"$UNKNOWN_PODS\"\n\n  \
+          \  echo \"$UNKNOWN_PODS\" | while read pod; do\n      NAMESPACE=$(echo $pod\
+          \ | cut -d/ -f1)\n      NAME=$(echo $pod | cut -d/ -f2)\n      echo \" \
+          \ \u2192 Deleting $NAMESPACE/$NAME\"\n      kubectl delete pod -n $NAMESPACE\
+          \ $NAME --force --grace-period=0 || echo \"  \u2717 Failed to delete\"\n\
+          \    done\n  else\n    echo \"  \u2713 No zombie pods found\"\n  fi\n\n\
+          \  # Find CrashLoopBackOff pods with >100 restarts\n  CRASH_PODS=$(kubectl\
+          \ get pods -A -o json | \\\n    jq -r '.items[] | select(.status.containerStatuses\
+          \ != null) | select(.status.containerStatuses[0].restartCount > 100) | \"\
+          \\(.metadata.namespace)/\\(.metadata.name)/\\(.status.containerStatuses[0].restartCount)\"\
+          ')\n\n  if [ -n \"$CRASH_PODS\" ]; then\n    echo \"[Zombie Cleanup] Found\
+          \ excessive CrashLoop pods:\"\n    echo \"$CRASH_PODS\" | while read pod;\
+          \ do\n      NAMESPACE=$(echo $pod | cut -d/ -f1)\n      NAME=$(echo $pod\
+          \ | cut -d/ -f2)\n      RESTARTS=$(echo $pod | cut -d/ -f3)\n      echo\
+          \ \"  \u2192 Scaling down $NAMESPACE/$NAME ($RESTARTS restarts)\"\n\n  \
+          \    # Try to scale down deployment\n      DEPLOYMENT=$(kubectl get pod\
+          \ -n $NAMESPACE $NAME -o jsonpath='{.metadata.ownerReferences[0].name}'\
+          \ 2>/dev/null || echo \"\")\n      if [ -n \"$DEPLOYMENT\" ]; then\n   \
+          \     kubectl scale deployment $DEPLOYMENT -n $NAMESPACE --replicas=0 ||\
+          \ echo \"  \u2717 Failed to scale\"\n      fi\n    done\n  else\n    echo\
+          \ \"  \u2713 No excessive CrashLoop pods\"\n  fi\n\n  echo \"\"\n  sleep\
+          \ 60\ndone\n"
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: CLEANUP_INTERVAL
+          value: '60'
+        image: bitnami/kubectl:latest
+        imagePullPolicy: Always
+        name: cleanup
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: cortex-cleanup-sa
+      serviceAccountName: cortex-cleanup-sa
+      terminationGracePeriodSeconds: 30

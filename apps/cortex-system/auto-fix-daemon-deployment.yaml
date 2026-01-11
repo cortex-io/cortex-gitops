@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '1'
+  labels:
+    app: auto-fix-daemon
+    cortex.component: automation
+  name: auto-fix-daemon
+  namespace: cortex-system
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: auto-fix-daemon
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: auto-fix-daemon
+    spec:
+      containers:
+      - args:
+        - "#!/bin/bash\nset -e\n\necho \"[Auto-Fix] Starting daemon...\"\necho \"\
+          [Auto-Fix] Check interval: 120 seconds\"\n\nwhile true; do\n  echo \"[$(date)]\
+          \ Running auto-fix checks...\"\n\n  # Fix 1: Clean up stuck volume attachments\n\
+          \  echo \"  \u2192 Checking for stuck volume attachments...\"\n  STUCK_VOLS=$(kubectl\
+          \ get volumeattachment -o json | \\\n    jq -r '.items[] | select(.status.attached\
+          \ == false) | select(.metadata.creationTimestamp | . as $t | (now - ($t\
+          \ | fromdateiso8601)) > 300) | .metadata.name')\n\n  if [ -n \"$STUCK_VOLS\"\
+          \ ]; then\n    echo \"    Found stuck volumes:\"\n    echo \"$STUCK_VOLS\"\
+          \ | while read vol; do\n      echo \"      \u2192 Deleting $vol\"\n    \
+          \  kubectl delete volumeattachment $vol || echo \"      \u2717 Failed\"\n\
+          \    done\n  else\n    echo \"    \u2713 No stuck volumes\"\n  fi\n\n  #\
+          \ Fix 2: Restart pods stuck in ContainerCreating for >10 minutes\n  echo\
+          \ \"  \u2192 Checking for stuck ContainerCreating pods...\"\n  STUCK_CREATING=$(kubectl\
+          \ get pods -A -o json | \\\n    jq -r '.items[] | select(.status.phase ==\
+          \ \"Pending\") | select(.status.conditions != null) | select(.status.conditions[]\
+          \ | select(.type == \"PodScheduled\" and .status == \"True\")) | select(.metadata.creationTimestamp\
+          \ | . as $t | (now - ($t | fromdateiso8601)) > 600) | \"\\(.metadata.namespace)/\\\
+          (.metadata.name)\"')\n\n  if [ -n \"$STUCK_CREATING\" ]; then\n    echo\
+          \ \"    Found stuck pods:\"\n    echo \"$STUCK_CREATING\" | while read pod;\
+          \ do\n      NAMESPACE=$(echo $pod | cut -d/ -f1)\n      NAME=$(echo $pod\
+          \ | cut -d/ -f2)\n      echo \"      \u2192 Restarting $NAMESPACE/$NAME\"\
+          \n      kubectl delete pod -n $NAMESPACE $NAME --grace-period=30 || echo\
+          \ \"      \u2717 Failed\"\n    done\n  else\n    echo \"    \u2713 No stuck\
+          \ ContainerCreating pods\"\n  fi\n\n  # Fix 3: Restart ImagePullBackOff\
+          \ pods stuck for >15 minutes\n  echo \"  \u2192 Checking for stuck ImagePullBackOff\
+          \ pods...\"\n  IMAGE_PULL_ERRORS=$(kubectl get pods -A -o json | \\\n  \
+          \  jq -r '.items[] | select(.status.containerStatuses != null) | select(.status.containerStatuses[].state.waiting.reason\
+          \ == \"ImagePullBackOff\") | select(.metadata.creationTimestamp | . as $t\
+          \ | (now - ($t | fromdateiso8601)) > 900) | \"\\(.metadata.namespace)/\\\
+          (.metadata.name)\"')\n\n  if [ -n \"$IMAGE_PULL_ERRORS\" ]; then\n    echo\
+          \ \"    Found stuck ImagePullBackOff pods:\"\n    echo \"$IMAGE_PULL_ERRORS\"\
+          \ | while read pod; do\n      NAMESPACE=$(echo $pod | cut -d/ -f1)\n   \
+          \   NAME=$(echo $pod | cut -d/ -f2)\n      echo \"      \u2192 Restarting\
+          \ $NAMESPACE/$NAME\"\n      kubectl delete pod -n $NAMESPACE $NAME --grace-period=30\
+          \ || echo \"      \u2717 Failed\"\n    done\n  else\n    echo \"    \u2713\
+          \ No stuck ImagePullBackOff pods\"\n  fi\n\n  echo \"\"\n  sleep 120\ndone\n"
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: FIX_INTERVAL
+          value: '120'
+        image: bitnami/kubectl:latest
+        imagePullPolicy: Always
+        name: auto-fix
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: cortex-cleanup-sa
+      serviceAccountName: cortex-cleanup-sa
+      terminationGracePeriodSeconds: 30

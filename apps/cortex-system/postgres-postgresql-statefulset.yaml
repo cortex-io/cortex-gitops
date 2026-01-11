@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    argocd.argoproj.io/tracking-id: cortex-system:apps/StatefulSet:cortex-system/postgres-postgresql
     meta.helm.sh/release-name: postgres
     meta.helm.sh/release-namespace: cortex-system
   labels:

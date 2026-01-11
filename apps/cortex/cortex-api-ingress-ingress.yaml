@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex:cortex-orchestrator","ingressName":"cortex:cortex-api-ingress","hostname":"cortex-api.ry-ops.dev","path":"/","allNodes":false}]'
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: 'true'
+  name: cortex-api-ingress
+  namespace: cortex
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: cortex-api.ry-ops.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: cortex-orchestrator
+            port:
+              number: 8000
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - cortex-api.ry-ops.dev
+    secretName: cortex-api-tls

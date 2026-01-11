@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  name: grafana-pdf-service
+  namespace: cortex-chat
+spec:
+  clusterIP: 10.43.135.179
+  clusterIPs:
+  - 10.43.135.179
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 3001
+    protocol: TCP
+    targetPort: 3001
+  selector:
+    app: grafana-pdf-service
+  sessionAffinity: None
+  type: ClusterIP

@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '15'
+  labels:
+    app.kubernetes.io/managed-by: EventListener
+    app.kubernetes.io/name: github-webhook-listener
+    app.kubernetes.io/part-of: Triggers
+    eventlistener: github-webhook-listener
+  name: el-github-webhook-listener
+  namespace: cortex-cicd
+  ownerReferences:
+  - apiVersion: triggers.tekton.dev/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: EventListener
+    name: github-webhook-listener
+    uid: 421e9259-6019-4b03-b532-504039c60b0c
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: EventListener
+      app.kubernetes.io/part-of: Triggers
+      eventlistener: github-webhook-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/managed-by: EventListener
+        app.kubernetes.io/name: github-webhook-listener
+        app.kubernetes.io/part-of: Triggers
+        eventlistener: github-webhook-listener
+    spec:
+      containers:
+      - args:
+        - --el-name=github-webhook-listener
+        - --el-namespace=cortex-cicd
+        - --port=8080
+        - --readtimeout=5
+        - --writetimeout=40
+        - --idletimeout=120
+        - --timeouthandler=30
+        - --httpclient-readtimeout=30
+        - --httpclient-keep-alive=30
+        - --httpclient-tlshandshaketimeout=10
+        - --httpclient-responseheadertimeout=10
+        - --httpclient-expectcontinuetimeout=1
+        - --is-multi-ns=false
+        - --payload-validation=true
+        - --cloudevent-uri=
+        - --tls-cert=
+        - --tls-key=
+        env:
+        - name: K_LOGGING_CONFIG
+          value: '{"zap-logger-config":"{\n  \"level\": \"info\",\n  \"development\":
+            false,\n  \"disableStacktrace\": true,\n  \"sampling\": {\n    \"initial\":
+            100,\n    \"thereafter\": 100\n  },\n  \"outputPaths\": [\"stdout\"],\n  \"errorOutputPaths\":
+            [\"stderr\"],\n  \"encoding\": \"json\",\n  \"encoderConfig\": {\n    \"timeKey\":
+            \"timestamp\",\n    \"levelKey\": \"severity\",\n    \"nameKey\": \"logger\",\n    \"callerKey\":
+            \"caller\",\n    \"messageKey\": \"message\",\n    \"stacktraceKey\":
+            \"stacktrace\",\n    \"lineEnding\": \"\",\n    \"levelEncoder\": \"\",\n    \"timeEncoder\":
+            \"iso8601\",\n    \"durationEncoder\": \"\",\n    \"callerEncoder\": \"\"\n  }\n}\n"}'
+        - name: K_METRICS_CONFIG
+          value: '{"Domain":"tekton.dev/triggers","Component":"eventlistener","PrometheusPort":0,"PrometheusHost":"","ConfigMap":{}}'
+        - name: K_TRACING_CONFIG
+          value: '{"backend":"none","debug":"false","sample-rate":"0.1"}'
+        - name: NAMESPACE
+          value: cortex-cicd
+        - name: NAME
+          value: github-webhook-listener
+        - name: EL_EVENT
+          value: disable
+        - name: K_SINK_TIMEOUT
+          value: '30'
+        - name: SYSTEM_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: METRICS_PROMETHEUS_PORT
+          value: '9000'
+        - name: KUBERNETES_MIN_VERSION
+          value: v1.28.0
+        image: ghcr.io/tektoncd/triggers/eventlistenersink-7ad1faa98cddbcb0c24990303b220bb8:v0.34.0@sha256:6af463bd78b8ce864cc89f961a4c604db297c1a5c375dd038519483b3f85541d
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /live
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: event-listener
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        - containerPort: 9000
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /live
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccount: tekton-triggers-sa
+      serviceAccountName: tekton-triggers-sa
+      terminationGracePeriodSeconds: 30
