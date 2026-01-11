@@ -1,5 +1,5 @@
 # Claude Code Operational Directive
-**Version**: 3.0.0 (Project Thunder)
+**Version**: 3.1.0 (Project Thunder)
 **Date**: 2026-01-11
 **Status**: ACTIVE
 
@@ -12,7 +12,7 @@ This directive defines how I (Claude Code) operate as the **Control Plane** for 
 **IMPORTANT**: This file lives in `~/Projects/cortex-gitops` (this repository).
 **All active development happens in TWO repositories**:
 - `~/Projects/cortex-gitops` - Infrastructure changes (Kubernetes manifests) ⭐ YOU ARE HERE
-- `~/cortex-platform` - Code changes (application source code)
+- `~/Projects/cortex-platform` - Code changes (application source code)
 
 ---
 
@@ -119,7 +119,7 @@ This directive defines how I (Claude Code) operate as the **Control Plane** for 
 ## Repository Structure
 
 ### cortex-gitops (Infrastructure) ⭐ PRIMARY WORK LOCATION
-**Location**: `/Users/ryandahlberg/cortex-gitops` (or `~/Projects/cortex-gitops`)
+**Location**: `~/Projects/cortex-gitops` (or `~/Projects/cortex-gitops`)
 **GitHub**: `https://github.com/ry-ops/cortex-gitops`
 **Contains**: Kubernetes manifests only
 **Usage**: ALL infrastructure changes happen here
@@ -141,7 +141,7 @@ cortex-gitops/
 **Total**: 121 YAML manifests
 
 ### cortex-platform (Application Code) ⭐ PRIMARY WORK LOCATION
-**Location**: `/Users/ryandahlberg/cortex-platform` (or `~/cortex-platform`)
+**Location**: `~/Projects/cortex-platform` (or `~/Projects/cortex-platform`)
 **GitHub**: `https://github.com/ry-ops/cortex-platform`
 **Contains**: All application source code
 **Usage**: ALL code changes happen here
@@ -162,7 +162,7 @@ cortex-platform/
 **Total**: 10,661 files
 
 ### cortex-k3s (Cluster Docs)
-**Location**: `/Users/ryandahlberg/cortex-k3s` (separate repo, not nested)
+**Location**: `~/Projects/cortex-k3s` (separate repo, not nested)
 **GitHub**: `https://github.com/ry-ops/cortex-k3s`
 **Contains**: K3s cluster documentation
 **Status**: Separate repository for cluster-specific docs
@@ -194,7 +194,7 @@ As the Control Plane, I **DO**:
 
 ✅ Read files locally
 ✅ Modify manifests in `~/Projects/cortex-gitops`
-✅ Modify code in `~/cortex-platform`
+✅ Modify code in `~/Projects/cortex-platform`
 ✅ Commit and push to GitHub
 ✅ Verify ArgoCD sync status
 ✅ Check cluster health with kubectl
@@ -335,7 +335,7 @@ cd ~/cortex-platform && git status
 
 ### Cleanup
 - Deleted 13,699+ duplicate files from `~/Projects/cortex-gitops`
-- Moved `cortex-k3s/` to `~/cortex-k3s` (separate repo)
+- Moved `cortex-k3s/` to `~/Projects/cortex-k3s` (separate repo)
 - Kept only: .git/, .claude/, .github/, .githooks/, cortex-readme.png, .gitignore
 
 ---
@@ -357,7 +357,7 @@ cd ~/cortex-platform && git status
 | Task | Command | Location |
 |------|---------|----------|
 | Infrastructure change | Edit YAML, commit, push | `~/Projects/cortex-gitops` |
-| Code change | Edit code, commit, push | `~/cortex-platform` |
+| Code change | Edit code, commit, push | `~/Projects/cortex-platform` |
 | Check ArgoCD | `kubectl get applications -n argocd` | Any terminal |
 | Check pods | `kubectl get pods -A` | Any terminal |
 | Rollback | `git revert <hash>` then push | `~/Projects/cortex-gitops` |
