@@ -9,9 +9,9 @@
 
 This directive defines how I (Claude Code) operate as the **Control Plane** for the Cortex infrastructure.
 
-**IMPORTANT**: This file lives in `~/cortex-gitops` (this repository).
+**IMPORTANT**: This file lives in `~/Projects/cortex-gitops` (this repository).
 **All active development happens in TWO repositories**:
-- `~/cortex-gitops` - Infrastructure changes (Kubernetes manifests) ⭐ YOU ARE HERE
+- `~/Projects/cortex-gitops` - Infrastructure changes (Kubernetes manifests) ⭐ YOU ARE HERE
 - `~/cortex-platform` - Code changes (application source code)
 
 ---
@@ -119,7 +119,7 @@ This directive defines how I (Claude Code) operate as the **Control Plane** for 
 ## Repository Structure
 
 ### cortex-gitops (Infrastructure) ⭐ PRIMARY WORK LOCATION
-**Location**: `/Users/ryandahlberg/cortex-gitops` (or `~/cortex-gitops`)
+**Location**: `/Users/ryandahlberg/cortex-gitops` (or `~/Projects/cortex-gitops`)
 **GitHub**: `https://github.com/ry-ops/cortex-gitops`
 **Contains**: Kubernetes manifests only
 **Usage**: ALL infrastructure changes happen here
@@ -193,7 +193,7 @@ As the Control Plane, I **NEVER**:
 As the Control Plane, I **DO**:
 
 ✅ Read files locally
-✅ Modify manifests in `~/cortex-gitops`
+✅ Modify manifests in `~/Projects/cortex-gitops`
 ✅ Modify code in `~/cortex-platform`
 ✅ Commit and push to GitHub
 ✅ Verify ArgoCD sync status
@@ -313,7 +313,7 @@ cd ~/cortex-platform && git status
 **Status**: Complete
 
 ### What Was Migrated
-- **From**: 17,024 files in `/projects/cortex`
+- **From**: 17,024 files in `~/Projects/cortex-gitops`
 - **To**: 121 manifests in cortex-gitops + 10,661 files in cortex-platform
 - **Reduction**: 81.3% local file reduction
 
@@ -334,7 +334,7 @@ cd ~/cortex-platform && git status
 - Zero manual deployments
 
 ### Cleanup
-- Deleted 13,699+ duplicate files from `/projects/cortex`
+- Deleted 13,699+ duplicate files from `~/Projects/cortex-gitops`
 - Moved `cortex-k3s/` to `~/cortex-k3s` (separate repo)
 - Kept only: .git/, .claude/, .github/, .githooks/, cortex-readme.png, .gitignore
 
@@ -356,11 +356,11 @@ cd ~/cortex-platform && git status
 
 | Task | Command | Location |
 |------|---------|----------|
-| Infrastructure change | Edit YAML, commit, push | `~/cortex-gitops` |
+| Infrastructure change | Edit YAML, commit, push | `~/Projects/cortex-gitops` |
 | Code change | Edit code, commit, push | `~/cortex-platform` |
 | Check ArgoCD | `kubectl get applications -n argocd` | Any terminal |
 | Check pods | `kubectl get pods -A` | Any terminal |
-| Rollback | `git revert <hash>` then push | `~/cortex-gitops` |
+| Rollback | `git revert <hash>` then push | `~/Projects/cortex-gitops` |
 | View logs | `kubectl logs -n <ns> <pod>` | Any terminal |
 
 ---
