@@ -12,24 +12,49 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: loader
-          image: curlimages/curl:latest
+          image: python:3.11-slim
           command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
-              echo "Waiting for registry to be ready..."
-              sleep 30
+              pip install --quiet pyyaml requests
 
-              for app in /apps/*.yaml; do
-                echo "Loading app: $app"
-                curl -X POST http://csaf-registry:8080/api/apps \
-                  -H "Content-Type: application/json" \
-                  -d @$app \
-                  --fail || echo "Failed to load $app"
-                sleep 2
-              done
+              cat > /tmp/loader.py << 'EOF'
+              import os
+              import yaml
+              import json
+              import requests
+              import time
 
-              echo "Seed apps loaded successfully"
+              REGISTRY_URL = "http://csaf-registry:8080"
+
+              print("Waiting for registry to be ready...")
+              time.sleep(30)
+
+              for filename in os.listdir('/apps'):
+                  if filename.endswith('.yaml'):
+                      filepath = os.path.join('/apps', filename)
+                      print(f"Loading app: {filename}")
+
+                      with open(filepath, 'r') as f:
+                          app_definition = yaml.safe_load(f)
+
+                      try:
+                          response = requests.post(
+                              f"{REGISTRY_URL}/api/apps",
+                              json=app_definition,
+                              headers={"Content-Type": "application/json"}
+                          )
+                          response.raise_for_status()
+                          print(f"  ✓ Loaded {app_definition['metadata']['name']}")
+                      except Exception as e:
+                          print(f"  ✗ Failed to load {filename}: {e}")
+                      time.sleep(2)
+
+              print("Seed apps loading complete")
+              EOF
+
+              python /tmp/loader.py
           volumeMounts:
             - name: seed-apps
               mountPath: /apps
