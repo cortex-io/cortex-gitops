@@ -16,6 +16,10 @@ spec:
       labels:
         app: checkmk
     spec:
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+        effect: NoExecute
       containers:
       - name: checkmk
         image: checkmk/check-mk-raw:2.4.0-latest
