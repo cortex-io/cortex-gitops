@@ -66,7 +66,7 @@ spec:
         - name: CORS_ORIGIN
           value: '*'
         - name: REDIS_PASSWORD
-        image: 10.43.170.72:5000/cortex-chat-backend:live
+        image: 10.43.170.72:5000/cortex-chat-backend-simple:latest
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3
