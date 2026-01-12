@@ -37,11 +37,11 @@ spec:
           mountPath: /tmp
         resources:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 100m
+            memory: 256Mi
           limits:
-            cpu: 800m
-            memory: 1Gi
+            cpu: 400m
+            memory: 512Mi
         readinessProbe:
           httpGet:
             path: /cmk/check_mk/login.py
