@@ -19,7 +19,7 @@ spec:
     whenDeleted: Retain
     whenScaled: Retain
   podManagementPolicy: OrderedReady
-  replicas: 2
+  replicas: 0  # Scaled down to free memory for MCP servers
   revisionHistoryLimit: 10
   selector:
     matchLabels:
