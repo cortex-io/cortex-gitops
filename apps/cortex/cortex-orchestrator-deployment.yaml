@@ -35,7 +35,10 @@ spec:
         - /patch/patch.sh
         env:
         - name: ANTHROPIC_API_KEY
-          value: "REDACTED-USE-KUBERNETES-SECRET"
+          valueFrom:
+            secretKeyRef:
+              name: anthropic-api-key
+              key: api-key
         - name: SANDFLY_HOST
           value: 10.88.140.176
         - name: SANDFLY_USERNAME
