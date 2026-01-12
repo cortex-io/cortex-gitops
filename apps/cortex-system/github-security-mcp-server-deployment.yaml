@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-security-mcp-server
+  namespace: cortex-system
+  labels:
+    app: github-security-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-security-mcp-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: github-security-mcp-server
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: setup-source
+        image: busybox
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p /repo/mcp_github_security
+          cp /source-server/server.py /repo/mcp_github_security/
+          cp /source-init/__init__.py /repo/mcp_github_security/
+          echo "Source files copied"
+          ls -laR /repo
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /source-server
+          name: source-server
+        - mountPath: /source-init
+          name: source-init
+      containers:
+      - name: app
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Installing dependencies..."
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 pydantic>=2.0.0
+
+          echo "Copying HTTP wrapper..."
+          cp /wrapper/mcp-http-wrapper.py /repo/wrapper.py
+
+          echo "Starting GitHub Security MCP HTTP Server on port 3003..."
+          python /repo/wrapper.py
+        env:
+        - name: GITHUB_TOKEN
+          value: "REQUIRES_MANUAL_SETUP"  # Generate at https://github.com/settings/tokens with security_events and repo scopes
+        - name: GITHUB_ORG
+          value: "ry-ops"
+        - name: GITHUB_API_URL
+          value: "https://api.github.com"
+        - name: GITHUB_TIMEOUT
+          value: "30"
+        - name: MCP_COMMAND
+          value: "python -m mcp_github_security.server"
+        - name: PORT
+          value: "3003"
+        ports:
+        - containerPort: 3003
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3003
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3003
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /wrapper
+          name: http-wrapper
+        workingDir: /repo
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 400m
+            memory: 256Mi
+      volumes:
+      - name: repo
+        emptyDir: {}
+      - name: http-wrapper
+        configMap:
+          name: mcp-http-wrapper
+      - name: source-server
+        configMap:
+          name: github-security-mcp-server-py
+      - name: source-init
+        configMap:
+          name: github-security-mcp-init-py

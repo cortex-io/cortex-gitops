@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-security-mcp-server
+  namespace: cortex-system
+  labels:
+    app: github-security-mcp-server
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 3003
+    targetPort: 3003
+    protocol: TCP
+  selector:
+    app: github-security-mcp-server
