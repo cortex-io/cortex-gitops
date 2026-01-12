@@ -62,7 +62,7 @@ spec:
         - name: N8N_PORT
           value: "5678"
         - name: N8N_API_KEY
-          value: "TODO_ADD_API_KEY"
+          value: "REQUIRES_MANUAL_GENERATION"  # Generate at http://10.88.140.104:5678 -> Settings -> API
         - name: N8N_VERIFY_SSL
           value: "false"
         - name: MCP_COMMAND
