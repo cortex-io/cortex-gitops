@@ -29,6 +29,8 @@ spec:
         app: cortex-orchestrator
     spec:
       terminationGracePeriodSeconds: 45
+      nodeSelector:
+        kubernetes.io/hostname: k3s-master03
       containers:
       - command:
         - /bin/sh
