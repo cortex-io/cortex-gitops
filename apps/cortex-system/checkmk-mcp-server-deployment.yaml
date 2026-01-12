@@ -58,13 +58,13 @@ spec:
           python /repo/wrapper.py
         env:
         - name: CHECKMK_HOST
-          value: "10.88.140.103"
+          value: "checkmk.checkmk.svc.cluster.local:5000"
         - name: CHECKMK_SITE
           value: "cmk"
         - name: CHECKMK_USERNAME
           value: "automation"
         - name: CHECKMK_PASSWORD
-          value: "TODO_ADD_PASSWORD"
+          value: "cortex-admin-password"
         - name: CHECKMK_VERIFY_SSL
           value: "false"
         - name: MCP_COMMAND
