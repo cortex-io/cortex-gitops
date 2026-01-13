@@ -28,8 +28,8 @@ spec:
         - |
           set -e
           echo "Creating Outline database if it doesn't exist..."
-          PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres.cortex-system.svc.cluster.local -U cortex -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'outline'" | grep -q 1 || \
-          PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres.cortex-system.svc.cluster.local -U cortex -d postgres -c "CREATE DATABASE outline OWNER cortex"
+          PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres-postgresql.cortex-system.svc.cluster.local -U cortex -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'outline'" | grep -q 1 || \
+          PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres-postgresql.cortex-system.svc.cluster.local -U cortex -d postgres -c "CREATE DATABASE outline OWNER cortex"
           echo "Database 'outline' is ready!"
         resources:
           requests:
