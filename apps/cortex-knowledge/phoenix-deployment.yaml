@@ -32,7 +32,7 @@ spec:
         imagePullPolicy: Always
         env:
         - name: PHOENIX_SQL_DATABASE_URL
-          value: "postgresql://postgres:postgres@postgres.cortex-system.svc.cluster.local:5432/phoenix"
+          value: "postgresql://postgres:postgres@postgres-postgresql.cortex-system.svc.cluster.local:5432/phoenix"
         - name: PHOENIX_WORKING_DIR
           value: "/data"
         - name: PHOENIX_PORT
