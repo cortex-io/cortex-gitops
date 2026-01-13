@@ -103,7 +103,7 @@ spec:
             memory: 512Mi
           limits:
             cpu: 1000m
-            memory: 2Gi
+            memory: 1024Mi
         livenessProbe:
           httpGet:
             path: /_health

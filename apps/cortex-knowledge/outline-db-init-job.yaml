@@ -31,6 +31,13 @@ spec:
           PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres.cortex-system.svc.cluster.local -U cortex -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'outline'" | grep -q 1 || \
           PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres.cortex-system.svc.cluster.local -U cortex -d postgres -c "CREATE DATABASE outline OWNER cortex"
           echo "Database 'outline' is ready!"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 400m
+            memory: 256Mi
         env:
         - name: POSTGRES_PASSWORD
           valueFrom:
