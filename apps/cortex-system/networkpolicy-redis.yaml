@@ -16,3 +16,11 @@ spec:
     ports:
     - protocol: TCP
       port: 6379
+  # Allow from cortex-chat namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cortex-chat
+    ports:
+    - protocol: TCP
+      port: 6379
