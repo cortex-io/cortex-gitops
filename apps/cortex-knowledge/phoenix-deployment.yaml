@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: phoenix
-        image: arizephoenix/phoenix:latest
+        image: 10.43.170.72:5000/phoenix:latest
         imagePullPolicy: Always
         env:
         - name: PHOENIX_SQL_DATABASE_URL
