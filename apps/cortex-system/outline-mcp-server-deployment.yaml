@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 30
       initContainers:
       - name: setup-source
-        image: busybox
+        image: busybox:1.36
         command:
         - sh
         - -c
