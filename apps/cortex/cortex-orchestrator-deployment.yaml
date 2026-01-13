@@ -29,6 +29,8 @@ spec:
         app: cortex-orchestrator
     spec:
       terminationGracePeriodSeconds: 45
+      nodeSelector:
+        kubernetes.io/hostname: k3s-master03
       containers:
       - command:
         - /bin/sh
@@ -73,7 +75,7 @@ spec:
           value: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
         - name: MAX_ITERATIONS
           value: '50'
-        image: 127.0.0.1:30500/cortex-api:latest
+        image: 10.43.170.72:5000/cortex-api:latest
         imagePullPolicy: Always
         name: cortex-api
         lifecycle:

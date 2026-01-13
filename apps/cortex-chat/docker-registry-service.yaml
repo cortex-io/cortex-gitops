@@ -8,18 +8,15 @@ spec:
   clusterIP: 10.43.170.72
   clusterIPs:
   - 10.43.170.72
-  externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - name: registry
-    nodePort: 30500
-    port: 5000
+  - port: 5000
     protocol: TCP
     targetPort: 5000
   selector:
     app: docker-registry
   sessionAffinity: None
-  type: NodePort
+  type: ClusterIP
