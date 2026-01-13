@@ -37,11 +37,11 @@ spec:
           value: "false"
         resources:
           requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 400m
+            cpu: 200m
             memory: 512Mi
+          limits:
+            cpu: 800m
+            memory: 1Gi
         volumeMounts:
         - name: config
           mountPath: /app/config
