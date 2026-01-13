@@ -124,8 +124,13 @@ spec:
       - name: outline-data
         persistentVolumeClaim:
           claimName: outline-data-pvc
-      nodeSelector:
-        node.longhorn.io/create-default-disk: "true"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       tolerations:
       - key: "CriticalAddonsOnly"
         operator: "Equal"
