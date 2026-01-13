@@ -73,7 +73,7 @@ spec:
           value: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
         - name: MAX_ITERATIONS
           value: '50'
-        image: 10.43.170.72:5000/cortex-api:latest
+        image: 127.0.0.1:30500/cortex-api:latest
         imagePullPolicy: Always
         name: cortex-api
         lifecycle:
