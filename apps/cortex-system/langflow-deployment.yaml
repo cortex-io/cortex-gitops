@@ -28,7 +28,7 @@ spec:
         - name: LANGFLOW_PORT
           value: "7860"
         - name: LANGFLOW_DATABASE_URL
-          value: "postgresql://langflow:langflow@postgres.cortex-system.svc.cluster.local:5432/langflow"
+          value: "postgresql://langflow:langflow@postgres-postgresql.cortex-system.svc.cluster.local:5432/langflow"
         - name: LANGFLOW_CONFIG_DIR
           value: "/app/config"
         - name: LANGFLOW_WORKERS
