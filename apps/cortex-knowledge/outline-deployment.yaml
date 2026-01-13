@@ -124,6 +124,8 @@ spec:
       - name: outline-data
         persistentVolumeClaim:
           claimName: outline-data-pvc
+      nodeSelector:
+        node.longhorn.io/create-default-disk: "true"
       tolerations:
       - key: "CriticalAddonsOnly"
         operator: "Equal"
