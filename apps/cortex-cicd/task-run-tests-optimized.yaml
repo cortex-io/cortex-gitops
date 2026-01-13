@@ -1,0 +1,141 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: run-tests-optimized
+  namespace: cortex-cicd
+  labels:
+    app.kubernetes.io/name: run-tests-optimized
+    app.kubernetes.io/part-of: cortex-cicd
+    app.kubernetes.io/component: test
+spec:
+  description: Run automated tests with dependency caching (npm, pytest, etc.)
+  params:
+    - name: TEST_COMMAND
+      description: Command to run tests
+      type: string
+      default: npm test
+    - name: LANGUAGE
+      description: Programming language (node, python, go)
+      type: string
+      default: node
+    - name: WORKING_DIR
+      description: Working directory for tests
+      type: string
+      default: .
+    - name: CACHE_KEY
+      description: Cache key for dependencies (e.g., package.json hash)
+      type: string
+      default: default
+  results:
+    - name: TEST_RESULT
+      description: Test execution result
+  workspaces:
+    - name: source
+      description: Workspace containing the source code
+    - name: dependency-cache
+      description: Persistent cache for dependencies
+      mountPath: /cache
+  steps:
+    - name: install-dependencies
+      image: node:20-alpine
+      workingDir: $(workspaces.source.path)/$(params.WORKING_DIR)
+      computeResources:
+        requests:
+          cpu: 200m      # Increased from 100m
+          memory: 512Mi  # Increased from 256Mi
+        limits:
+          cpu: 1000m     # Increased from 500m
+          memory: 2Gi    # Increased from 1Gi
+      env:
+        - name: NPM_CONFIG_CACHE
+          value: /cache/npm
+        - name: PIP_CACHE_DIR
+          value: /cache/pip
+        - name: GOMODCACHE
+          value: /cache/go/pkg/mod
+        - name: GOCACHE
+          value: /cache/go/build
+      script: |
+        #!/bin/sh
+        set -e
+
+        # Create cache directories
+        mkdir -p /cache/npm /cache/pip /cache/go/pkg/mod /cache/go/build
+
+        echo "Using dependency cache at: /cache"
+        echo "Cache key: $(params.CACHE_KEY)"
+
+        case "$(params.LANGUAGE)" in
+          node)
+            echo "Installing Node.js dependencies with cache..."
+            if [ -f package.json ]; then
+              # Use npm ci with cache for faster installs
+              npm ci --prefer-offline --no-audit --cache /cache/npm
+
+              # Display cache stats
+              echo "npm cache size:"
+              du -sh /cache/npm 2>/dev/null || echo "Cache directory empty"
+            else
+              echo "No package.json found, skipping dependency installation"
+            fi
+            ;;
+          python)
+            echo "Installing Python dependencies with cache..."
+            if [ -f requirements.txt ]; then
+              pip install --cache-dir /cache/pip -r requirements.txt
+
+              echo "pip cache size:"
+              du -sh /cache/pip 2>/dev/null || echo "Cache directory empty"
+            else
+              echo "No requirements.txt found, skipping dependency installation"
+            fi
+            ;;
+          go)
+            echo "Installing Go dependencies with cache..."
+            if [ -f go.mod ]; then
+              go mod download
+
+              echo "go cache size:"
+              du -sh /cache/go 2>/dev/null || echo "Cache directory empty"
+            else
+              echo "No go.mod found, skipping dependency installation"
+            fi
+            ;;
+          *)
+            echo "Language $(params.LANGUAGE) not supported for dependency installation"
+            ;;
+        esac
+
+    - name: run-tests
+      image: node:20-alpine
+      workingDir: $(workspaces.source.path)/$(params.WORKING_DIR)
+      computeResources:
+        requests:
+          cpu: 500m      # Increased from 200m
+          memory: 1Gi    # Increased from 512Mi
+        limits:
+          cpu: 2000m     # Increased from 1000m
+          memory: 4Gi    # Increased from 2Gi
+      env:
+        - name: NPM_CONFIG_CACHE
+          value: /cache/npm
+        - name: CI
+          value: "true"
+      script: |
+        #!/bin/sh
+        set -e
+
+        echo "Running tests: $(params.TEST_COMMAND)"
+        echo "Working directory: $(pwd)"
+
+        # Run tests and capture exit code
+        $(params.TEST_COMMAND) || TEST_EXIT_CODE=$?
+
+        if [ "${TEST_EXIT_CODE:-0}" -eq 0 ]; then
+          echo "✓ Tests passed!"
+          echo -n "PASSED" > /tekton/results/TEST_RESULT
+        else
+          echo "✗ Tests failed with exit code: ${TEST_EXIT_CODE}"
+          echo -n "FAILED" > /tekton/results/TEST_RESULT
+          exit ${TEST_EXIT_CODE}
+        fi

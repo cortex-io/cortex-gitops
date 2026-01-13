@@ -1,0 +1,100 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-push-pipeline-optimized
+  namespace: cortex-cicd
+  labels:
+    app.kubernetes.io/name: build-push-pipeline-optimized
+    app.kubernetes.io/part-of: cortex-cicd
+spec:
+  description: Optimized build and push pipeline with layer caching
+  params:
+    - name: git-url
+      description: Git repository URL
+      type: string
+    - name: git-revision
+      description: Git branch, tag, or commit
+      type: string
+      default: main
+    - name: image-name
+      description: Target image name (without registry)
+      type: string
+    - name: image-tag
+      description: Image tag
+      type: string
+      default: latest
+    - name: dockerfile-path
+      description: Path to Dockerfile
+      type: string
+      default: ./Dockerfile
+    - name: context-dir
+      description: Build context directory
+      type: string
+      default: .
+  results:
+    - name: image-digest
+      description: Digest of the built image
+      value: $(tasks.build-and-push.results.IMAGE_DIGEST)
+    - name: image-url
+      description: URL of the built image
+      value: $(tasks.build-and-push.results.IMAGE_URL)
+  workspaces:
+    - name: shared-workspace
+      description: Shared workspace for pipeline tasks
+    - name: docker-credentials
+      description: Docker registry credentials
+    - name: build-cache
+      description: Persistent cache for Kaniko layers
+    - name: dependency-cache
+      description: Persistent cache for dependencies
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: subdirectory
+          value: source
+
+    # Build and scan run in parallel (security scan on previous image while building new one)
+    - name: build-and-push
+      taskRef:
+        name: kaniko-build-optimized
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+          subPath: source
+        - name: dockerconfig
+          workspace: docker-credentials
+        - name: cache
+          workspace: build-cache
+      params:
+        - name: IMAGE
+          value: 10.43.170.72:5000/$(params.image-name):$(params.image-tag)
+        - name: DOCKERFILE
+          value: $(params.dockerfile-path)
+        - name: CONTEXT
+          value: $(params.context-dir)
+
+    - name: security-scan
+      taskRef:
+        name: trivy-scan
+      runAfter:
+        - build-and-push
+      params:
+        - name: IMAGE
+          value: 10.43.170.72:5000/$(params.image-name):$(params.image-tag)
+        - name: SEVERITY
+          value: CRITICAL,HIGH
+        - name: EXIT_CODE
+          value: "0"
+        - name: INSECURE
+          value: "true"

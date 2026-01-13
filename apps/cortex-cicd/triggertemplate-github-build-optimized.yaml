@@ -1,0 +1,63 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: github-build-template-optimized
+  namespace: cortex-cicd
+  labels:
+    app.kubernetes.io/name: github-build-template-optimized
+    app.kubernetes.io/part-of: cortex-cicd
+spec:
+  params:
+    - name: git-url
+      description: Git repository URL
+    - name: git-revision
+      description: Git revision to build
+    - name: git-repo-name
+      description: Repository name
+    - name: git-branch
+      description: Git branch
+      default: refs/heads/main
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: github-build-optimized-
+        namespace: cortex-cicd
+        labels:
+          app.kubernetes.io/name: github-build-pipelinerun
+          tekton.dev/pipeline: build-push-pipeline-optimized
+          triggers.tekton.dev/trigger: github-push
+      spec:
+        pipelineRef:
+          name: build-push-pipeline-optimized
+        serviceAccountName: tekton-pipeline-sa
+        timeout: 1h
+        params:
+          - name: git-url
+            value: $(tt.params.git-url)
+          - name: git-revision
+            value: $(tt.params.git-revision)
+          - name: image-name
+            value: $(tt.params.git-repo-name)
+          - name: image-tag
+            value: $(tt.params.git-revision)
+        workspaces:
+          # Ephemeral workspace for source code (smaller, deleted after run)
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 2Gi  # Increased from 1Gi for larger repos
+          # Persistent cache workspaces (reused across runs)
+          - name: build-cache
+            persistentVolumeClaim:
+              claimName: build-cache
+          - name: dependency-cache
+            persistentVolumeClaim:
+              claimName: dependency-cache
+          - name: docker-credentials
+            secret:
+              secretName: registry-credentials

@@ -1,0 +1,87 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: kaniko-build-optimized
+  namespace: cortex-cicd
+  labels:
+    app.kubernetes.io/name: kaniko-build-optimized
+    app.kubernetes.io/part-of: cortex-cicd
+    app.kubernetes.io/component: build
+spec:
+  description: Build and push container image using Kaniko with layer caching
+  params:
+    - name: IMAGE
+      description: Name (reference) of the image to build
+    - name: DOCKERFILE
+      description: Path to the Dockerfile to build
+      default: ./Dockerfile
+    - name: CONTEXT
+      description: The build context used by Kaniko
+      default: ./
+    - name: EXTRA_ARGS
+      type: array
+      default:
+        - --skip-tls-verify
+        - --insecure
+        - --insecure-pull
+        - --insecure-registry=10.43.170.72:5000
+    - name: BUILDER_IMAGE
+      description: The image on which builds will run
+      default: gcr.io/kaniko-project/executor:v1.23.2
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the image just built
+    - name: IMAGE_URL
+      description: URL of the image just built
+  workspaces:
+    - name: source
+      description: Holds the context and Dockerfile
+    - name: dockerconfig
+      description: Includes a docker `config.json`
+      optional: true
+      mountPath: /kaniko/.docker
+    - name: cache
+      description: Persistent cache for Kaniko layers
+      mountPath: /cache
+  steps:
+    - name: build-and-push
+      image: $(params.BUILDER_IMAGE)
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        runAsUser: 0
+      computeResources:
+        requests:
+          cpu: 500m      # Increased from 200m
+          memory: 1Gi    # Increased from 512Mi
+        limits:
+          cpu: 2000m     # Increased from 1000m
+          memory: 4Gi    # Increased from 2Gi
+      args:
+        - $(params.EXTRA_ARGS[*])
+        - --dockerfile=$(params.DOCKERFILE)
+        - --context=$(workspaces.source.path)/$(params.CONTEXT)
+        - --destination=$(params.IMAGE)
+        - --digest-file=/tekton/results/IMAGE_DIGEST
+        # Layer caching optimizations
+        - --cache=true
+        - --cache-dir=/cache
+        - --cache-ttl=168h  # 7 days cache TTL
+        # Additional optimizations
+        - --compressed-caching=true
+        - --snapshot-mode=redo  # Faster than default 'full'
+        - --use-new-run=true    # Use BuildKit-style RUN
+        # Push to internal registry cache
+        - --cache-repo=10.43.170.72:5000/cache/$(params.IMAGE)
+    - name: write-url
+      image: docker.io/library/bash:5.2.37
+      computeResources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        echo -n "$(params.IMAGE)" > /tekton/results/IMAGE_URL

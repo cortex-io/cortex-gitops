@@ -1,0 +1,165 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-build-deploy-pipeline-optimized
+  namespace: cortex-cicd
+  labels:
+    app.kubernetes.io/name: test-build-deploy-pipeline-optimized
+    app.kubernetes.io/part-of: cortex-cicd
+spec:
+  description: Optimized CI/CD pipeline - Parallel testing and building with caching
+  params:
+    - name: git-url
+      description: Git repository URL
+      type: string
+    - name: git-revision
+      description: Git branch, tag, or commit
+      type: string
+      default: main
+    - name: image-name
+      description: Target image name
+      type: string
+    - name: image-tag
+      description: Image tag
+      type: string
+      default: latest
+    - name: dockerfile-path
+      description: Path to Dockerfile
+      type: string
+      default: ./Dockerfile
+    - name: test-command
+      description: Command to run tests
+      type: string
+      default: npm test
+    - name: language
+      description: Programming language
+      type: string
+      default: node
+    - name: helm-release-name
+      description: Helm release name
+      type: string
+      default: ""
+    - name: helm-chart-path
+      description: Path to Helm chart
+      type: string
+      default: ./chart
+    - name: deploy-namespace
+      description: Target namespace for deployment
+      type: string
+      default: cortex-system
+    - name: cache-key
+      description: Cache key for dependencies
+      type: string
+      default: default
+  results:
+    - name: image-digest
+      description: Digest of the built image
+      value: $(tasks.build-and-push.results.IMAGE_DIGEST)
+    - name: test-result
+      description: Test execution result
+      value: $(tasks.run-tests.results.TEST_RESULT)
+  workspaces:
+    - name: shared-workspace
+      description: Shared workspace for pipeline tasks
+    - name: docker-credentials
+      description: Docker registry credentials
+    - name: build-cache
+      description: Persistent cache for Kaniko layers
+    - name: dependency-cache
+      description: Persistent cache for dependencies
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: subdirectory
+          value: source
+
+    # OPTIMIZATION: Tests and build run in parallel after fetch
+    # Tests use dependency cache, build uses layer cache
+    - name: run-tests
+      taskRef:
+        name: run-tests-optimized
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+          subPath: source
+        - name: dependency-cache
+          workspace: dependency-cache
+      params:
+        - name: TEST_COMMAND
+          value: $(params.test-command)
+        - name: LANGUAGE
+          value: $(params.language)
+        - name: CACHE_KEY
+          value: $(params.cache-key)
+
+    - name: build-and-push
+      taskRef:
+        name: kaniko-build-optimized
+      runAfter:
+        - fetch-repository
+        # NOTE: Build starts immediately after fetch, parallel to tests
+        # Only security scan waits for both test + build
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+          subPath: source
+        - name: dockerconfig
+          workspace: docker-credentials
+        - name: cache
+          workspace: build-cache
+      params:
+        - name: IMAGE
+          value: 10.43.170.72:5000/$(params.image-name):$(params.image-tag)
+        - name: DOCKERFILE
+          value: $(params.dockerfile-path)
+
+    # Security scan waits for both tests and build to complete
+    - name: security-scan
+      taskRef:
+        name: trivy-scan
+      runAfter:
+        - run-tests
+        - build-and-push
+      params:
+        - name: IMAGE
+          value: 10.43.170.72:5000/$(params.image-name):$(params.image-tag)
+        - name: SEVERITY
+          value: CRITICAL,HIGH
+        - name: EXIT_CODE
+          value: "0"
+        - name: INSECURE
+          value: "true"
+
+    - name: deploy-with-helm
+      taskRef:
+        name: helm-deploy
+      runAfter:
+        - security-scan
+      when:
+        - input: $(params.helm-release-name)
+          operator: notin
+          values:
+            - ""
+            - none
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+          subPath: source
+      params:
+        - name: RELEASE_NAME
+          value: $(params.helm-release-name)
+        - name: CHART_PATH
+          value: $(params.helm-chart-path)
+        - name: NAMESPACE
+          value: $(params.deploy-namespace)
