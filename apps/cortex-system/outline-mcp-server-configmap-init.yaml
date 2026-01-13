@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: outline-mcp-init-py
+  namespace: cortex-system
+  labels:
+    app: outline-mcp-server
+data:
+  __init__.py: |
+    """Outline MCP Server - Documentation wiki access for Cortex agents"""
+    __version__ = "1.0.0"

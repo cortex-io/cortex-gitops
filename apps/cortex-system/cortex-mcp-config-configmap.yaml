@@ -18,5 +18,11 @@ data:
   PROXMOX_MCP_URL: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
   UNIFI_MCP_URL: http://unifi-mcp-server.cortex-system.svc.cluster.local:3000
   SANDFLY_MCP_URL: http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000
+  OUTLINE_MCP_URL: http://outline-mcp-server.cortex-system.svc.cluster.local:3004
+  KUBERNETES_MCP_URL: http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001
+  GITHUB_SECURITY_MCP_URL: http://github-security-mcp-server.cortex-system.svc.cluster.local:3003
+  CHECKMK_MCP_URL: http://checkmk-mcp-server.cortex-system.svc.cluster.local:3002
+  N8N_MCP_URL: http://n8n-mcp-server.cortex-system.svc.cluster.local:3005
+  CLOUDFLARE_MCP_URL: http://cloudflare-mcp-server.cortex-system.svc.cluster.local:3006
   WORKER_POOL_SIZE: "10000"
   WORKER_TIMEOUT_MINUTES: "60"
