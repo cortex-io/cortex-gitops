@@ -91,5 +91,10 @@ spec:
         emptyDir: {}
       - name: tmp
         emptyDir: {}
+      tolerations:
+      - key: "CriticalAddonsOnly"
+        operator: "Equal"
+        value: "true"
+        effect: "NoExecute"
       restartPolicy: Always
       dnsPolicy: ClusterFirst

@@ -124,6 +124,11 @@ spec:
       - name: outline-data
         persistentVolumeClaim:
           claimName: outline-data-pvc
+      tolerations:
+      - key: "CriticalAddonsOnly"
+        operator: "Equal"
+        value: "true"
+        effect: "NoExecute"
       restartPolicy: Always
 ---
 apiVersion: v1
