@@ -21,6 +21,13 @@ spec:
         pathType: Prefix
       - backend:
           service:
+            name: cortex-chat-backend-simple
+            port:
+              number: 8080
+        path: /api
+        pathType: Prefix
+      - backend:
+          service:
             name: cortex-chat
             port:
               number: 80
