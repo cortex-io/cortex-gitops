@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: db-init
-        image: postgres:15-alpine
+        image: 10.43.170.72:5000/postgres:15-alpine
         command:
         - /bin/sh
         - -c
