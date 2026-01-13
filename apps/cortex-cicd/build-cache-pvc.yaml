@@ -13,7 +13,7 @@ spec:
   resources:
     requests:
       storage: 20Gi  # Larger cache for layer and dependency storage
-  storageClassName: local-path  # Use local-path for k3s
+  storageClassName: longhorn  # Use Longhorn for RWX support
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -30,4 +30,4 @@ spec:
   resources:
     requests:
       storage: 10Gi  # Cache for node_modules, pip packages, go modules
-  storageClassName: local-path
+  storageClassName: longhorn  # Use Longhorn for RWX support
