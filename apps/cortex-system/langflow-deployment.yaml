@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: langflow
+  namespace: cortex-system
+  labels:
+    app: langflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: langflow
+  template:
+    metadata:
+      labels:
+        app: langflow
+    spec:
+      containers:
+      - name: langflow
+        image: langflowai/langflow:latest
+        ports:
+        - containerPort: 7860
+          name: http
+        env:
+        - name: LANGFLOW_DATABASE_URL
+          value: "postgresql://langflow:langflow@postgres.cortex-system.svc.cluster.local:5432/langflow"
+        - name: LANGFLOW_CONFIG_DIR
+          value: "/app/config"
+        - name: LANGFLOW_WORKERS
+          value: "1"
+        - name: LANGFLOW_AUTO_LOGIN
+          value: "false"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+        - name: flows
+          mountPath: /app/flows
+      volumes:
+      - name: config
+        emptyDir: {}
+      - name: flows
+        emptyDir: {}

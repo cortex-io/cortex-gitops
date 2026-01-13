@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: langflow
+  namespace: cortex-system
+  labels:
+    app: langflow
+spec:
+  type: ClusterIP
+  ports:
+  - port: 7860
+    targetPort: 7860
+    protocol: TCP
+    name: http
+  selector:
+    app: langflow
