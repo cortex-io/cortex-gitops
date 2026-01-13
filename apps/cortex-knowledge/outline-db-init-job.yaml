@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: outline-db-init
+  namespace: cortex-knowledge
+  labels:
+    app: outline
+    component: db-init
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: outline
+        component: db-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: db-init
+        image: postgres:15-alpine
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "Creating Outline database if it doesn't exist..."
+          PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres.cortex-system.svc.cluster.local -U cortex -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'outline'" | grep -q 1 || \
+          PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgres.cortex-system.svc.cluster.local -U cortex -d postgres -c "CREATE DATABASE outline OWNER cortex"
+          echo "Database 'outline' is ready!"
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: outline-secret
+              key: POSTGRES_PASSWORD
