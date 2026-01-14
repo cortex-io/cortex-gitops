@@ -31,16 +31,20 @@ spec:
         - -c
         - |
           pip install --no-cache-dir --target=/deps mcp>=0.9.0 pydantic>=2.0.0 httpx>=0.27.0
+          chown -R 1000:1000 /deps
         volumeMounts:
         - name: deps
           mountPath: /deps
         resources:
           requests:
-            cpu: 100m
-            memory: 256Mi
+            cpu: 50m
+            memory: 128Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
       containers:
       - name: server
         image: python:3.11-slim
@@ -71,11 +75,11 @@ spec:
               key: ANTHROPIC_API_KEY
         resources:
           requests:
-            cpu: 100m
-            memory: 128Mi
+            cpu: 50m
+            memory: 64Mi
           limits:
-            cpu: 500m
-            memory: 256Mi
+            cpu: 200m
+            memory: 128Mi
         livenessProbe:
           exec:
             command:
