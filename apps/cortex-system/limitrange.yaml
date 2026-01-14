@@ -13,13 +13,13 @@ spec:
       cpu: 100m
       memory: 128Mi
     min:
-      cpu: 50m
+      cpu: 10m
       memory: 64Mi
     max:
       cpu: 4
       memory: 8Gi
     maxLimitRequestRatio:
-      cpu: 4
+      cpu: 10
       memory: 2
   - type: Pod
     max:
