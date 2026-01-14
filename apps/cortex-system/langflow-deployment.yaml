@@ -44,6 +44,8 @@ spec:
           value: "admin"
         - name: LANGFLOW_SUPERUSER_PASSWORD
           value: "cortex123"
+        - name: LANGFLOW_STORE_API_KEY
+          value: "72jysUVCBMAh7NataemlpDjJ2zt6r8ev"
         resources:
           requests:
             cpu: 500m
