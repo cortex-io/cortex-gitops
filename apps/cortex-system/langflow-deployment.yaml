@@ -46,6 +46,10 @@ spec:
           value: "cortex123"
         - name: LANGFLOW_STORE_API_KEY
           value: "72jysUVCBMAh7NataemlpDjJ2zt6r8ev"
+        # Custom Global Variables from Secret
+        envFrom:
+        - secretRef:
+            name: langflow-global-vars
         resources:
           requests:
             cpu: 500m
