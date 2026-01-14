@@ -40,6 +40,10 @@ spec:
           value: "1"
         - name: LANGFLOW_AUTO_LOGIN
           value: "true"
+        - name: LANGFLOW_SUPERUSER
+          value: "admin"
+        - name: LANGFLOW_SUPERUSER_PASSWORD
+          value: "cortex123"
         resources:
           requests:
             cpu: 500m
