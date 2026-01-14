@@ -39,7 +39,7 @@ spec:
         - name: LANGFLOW_WORKERS
           value: "1"
         - name: LANGFLOW_AUTO_LOGIN
-          value: "false"
+          value: "true"
         resources:
           requests:
             cpu: 500m
