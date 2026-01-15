@@ -1,0 +1,128 @@
+{
+  "name": "Service Health Dashboard",
+  "description": "Real-time service status aggregation across Kubernetes, Proxmox, and network infrastructure",
+  "data": {
+    "nodes": [
+      {
+        "id": "k8s-health",
+        "type": "MCPClient",
+        "position": {"x": 100, "y": 50},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001"
+              },
+              "method": {
+                "value": "k8s_get_service_status"
+              },
+              "params": {
+                "value": "{}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "proxmox-health",
+        "type": "MCPClient",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000"
+              },
+              "method": {
+                "value": "proxmox_get_node_status"
+              },
+              "params": {
+                "value": "{}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "network-health",
+        "type": "MCPClient",
+        "position": {"x": 100, "y": 350},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://unifi-mcp-server.cortex-system.svc.cluster.local:3000"
+              },
+              "method": {
+                "value": "unifi_get_network_status"
+              },
+              "params": {
+                "value": "{}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "dashboard-aggregator",
+        "type": "ChatAnthropic",
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "Aggregate infrastructure health into a comprehensive dashboard:\n\nKubernetes Services:\n{k8s-health.output}\n\nProxmox Nodes:\n{proxmox-health.output}\n\nNetwork Infrastructure:\n{network-health.output}\n\nCreate a unified dashboard view with:\n1. Overall health status (GREEN/YELLOW/RED)\n2. Component health breakdown\n3. Active alerts and issues\n4. Trend analysis (improving/stable/degrading)\n5. Recommended actions"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "output-dashboard",
+        "type": "ChatOutput",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "node": {
+            "template": {
+              "input_value": {
+                "value": "{dashboard-aggregator.text}"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "k8s-health",
+        "target": "dashboard-aggregator",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "proxmox-health",
+        "target": "dashboard-aggregator",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "network-health",
+        "target": "dashboard-aggregator",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "dashboard-aggregator",
+        "target": "output-dashboard",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      }
+    ]
+  }
+}

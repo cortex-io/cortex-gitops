@@ -1,0 +1,76 @@
+{
+  "name": "GitHub Security Scanner",
+  "description": "Connects to GitHub Security MCP server, lists security tools and vulnerability scanners",
+  "data": {
+    "nodes": [
+      {
+        "id": "github-sec-mcp",
+        "type": "MCPClient",
+        "position": {"x": 250, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://github-security-mcp-server.cortex-system.svc.cluster.local:3003"
+              },
+              "method": {
+                "value": "list_security_tools"
+              },
+              "params": {
+                "value": "{}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "claude-analyzer",
+        "type": "ChatAnthropic",
+        "position": {"x": 500, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "Analyze these GitHub security tools and provide:\n1. Available security tools and scanners\n2. Configuration recommendations\n3. Integration best practices\n\nSecurity Data:\n{github-sec-mcp.output}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "output-security",
+        "type": "ChatOutput",
+        "position": {"x": 750, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "input_value": {
+                "value": "{claude-analyzer.text}"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "github-sec-mcp",
+        "target": "claude-analyzer",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "claude-analyzer",
+        "target": "output-security",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      }
+    ]
+  }
+}

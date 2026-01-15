@@ -1,0 +1,76 @@
+{
+  "name": "Log Pattern Analyzer",
+  "description": "Finds anomalies and patterns in application and infrastructure logs",
+  "data": {
+    "nodes": [
+      {
+        "id": "log-fetcher",
+        "type": "MCPClient",
+        "position": {"x": 100, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001"
+              },
+              "method": {
+                "value": "k8s_get_logs"
+              },
+              "params": {
+                "value": "{\"namespace\": \"cortex-system\", \"tail\": 500}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "pattern-detector",
+        "type": "ChatAnthropic",
+        "position": {"x": 350, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "Analyze these logs for patterns and anomalies:\n\n{log-fetcher.output}\n\nIdentify:\n1. Error patterns and frequency\n2. Performance anomalies\n3. Suspicious activity\n4. Recommended actions\n5. Timeline of significant events"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "output-logs",
+        "type": "ChatOutput",
+        "position": {"x": 600, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "input_value": {
+                "value": "{pattern-detector.text}"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "log-fetcher",
+        "target": "pattern-detector",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "pattern-detector",
+        "target": "output-logs",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      }
+    ]
+  }
+}

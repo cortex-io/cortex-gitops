@@ -66,4 +66,5 @@ spec:
       - name: config
         emptyDir: {}
       - name: flows
-        emptyDir: {}
+        configMap:
+          name: langflow-workflows

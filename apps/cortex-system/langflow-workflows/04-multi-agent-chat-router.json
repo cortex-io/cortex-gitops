@@ -1,0 +1,108 @@
+{
+  "name": "Multi-Agent Chat Router",
+  "description": "Routes user input to either Kubernetes expert or Security expert based on query intent",
+  "data": {
+    "nodes": [
+      {
+        "id": "classifier",
+        "type": "ChatAnthropic",
+        "position": {"x": 100, "y": 150},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "Classify this query and respond with ONLY 'kubernetes' or 'security':\n\n{user_input}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "k8s-expert",
+        "type": "ChatAnthropic",
+        "position": {"x": 350, "y": 50},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "You are a Kubernetes expert. Answer this question:\n\n{user_input}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "security-expert",
+        "type": "ChatAnthropic",
+        "position": {"x": 350, "y": 250},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "You are a Security expert. Answer this question:\n\n{user_input}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "output-routed",
+        "type": "ChatOutput",
+        "position": {"x": 600, "y": 150},
+        "data": {
+          "node": {
+            "template": {
+              "input_value": {
+                "value": "{classifier.classification == 'kubernetes' ? k8s-expert.text : security-expert.text}"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "classifier",
+        "target": "k8s-expert",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      },
+      {
+        "source": "classifier",
+        "target": "security-expert",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      },
+      {
+        "source": "k8s-expert",
+        "target": "output-routed",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      },
+      {
+        "source": "security-expert",
+        "target": "output-routed",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      }
+    ]
+  }
+}

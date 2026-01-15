@@ -1,0 +1,128 @@
+{
+  "name": "Deployment Validator",
+  "description": "Pre-deployment safety checks and validation against security policies",
+  "data": {
+    "nodes": [
+      {
+        "id": "deployment-input",
+        "type": "ChatInput",
+        "position": {"x": 50, "y": 150},
+        "data": {
+          "node": {
+            "template": {
+              "input_value": {
+                "value": "Deployment manifest YAML"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "k8s-validator",
+        "type": "MCPClient",
+        "position": {"x": 250, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001"
+              },
+              "method": {
+                "value": "k8s_validate_manifest"
+              },
+              "params": {
+                "value": "{\"manifest\": \"{deployment-input.value}\"}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "security-check",
+        "type": "MCPClient",
+        "position": {"x": 250, "y": 300},
+        "data": {
+          "node": {
+            "template": {
+              "server_url": {
+                "value": "http://github-security-mcp-server.cortex-system.svc.cluster.local:3003"
+              },
+              "method": {
+                "value": "check_security_policies"
+              },
+              "params": {
+                "value": "{\"manifest\": \"{deployment-input.value}\"}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "validation-analyzer",
+        "type": "ChatAnthropic",
+        "position": {"x": 500, "y": 200},
+        "data": {
+          "node": {
+            "template": {
+              "model_name": {
+                "value": "claude-sonnet-4-20250514"
+              },
+              "anthropic_api_key": {
+                "value": "{{ANTHROPIC_API_KEY}}"
+              },
+              "input_value": {
+                "value": "Review deployment validation results:\n\nKubernetes Validation:\n{k8s-validator.output}\n\nSecurity Policy Check:\n{security-check.output}\n\nProvide:\n1. SAFE/UNSAFE status\n2. Issues found\n3. Required fixes before deployment\n4. Compliance status"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "output-validation",
+        "type": "ChatOutput",
+        "position": {"x": 750, "y": 200},
+        "data": {
+          "node": {
+            "template": {
+              "input_value": {
+                "value": "{validation-analyzer.text}"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "deployment-input",
+        "target": "k8s-validator",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "deployment-input",
+        "target": "security-check",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "k8s-validator",
+        "target": "validation-analyzer",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "security-check",
+        "target": "validation-analyzer",
+        "sourceHandle": "output",
+        "targetHandle": "input"
+      },
+      {
+        "source": "validation-analyzer",
+        "target": "output-validation",
+        "sourceHandle": "text",
+        "targetHandle": "input"
+      }
+    ]
+  }
+}
