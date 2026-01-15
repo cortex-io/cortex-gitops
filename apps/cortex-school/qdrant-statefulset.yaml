@@ -41,7 +41,7 @@ spec:
     spec:
       containers:
       - name: qdrant
-        image: qdrant/qdrant:v1.7.4
+        image: 10.43.170.72:5000/qdrant:v1.7.4
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 6333
