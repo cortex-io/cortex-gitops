@@ -1,0 +1,290 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashy-config
+  namespace: default
+data:
+  conf.yml: |
+    pageInfo:
+      title: Cortex Holdings - Infrastructure Dashboard
+      description: Complete monitoring and management dashboard for Larry & the Darryls
+      logo: https://i.ibb.co/qWWpD0v/astro-dab-128.png
+
+    appConfig:
+      theme: colorful
+      layout: auto
+      iconSize: large
+      language: en
+      statusCheck: true
+      statusCheckInterval: 60
+
+    sections:
+      - name: K3s Cluster Overview
+        icon: fas fa-dharmachakra
+        displayData:
+          collapsed: false
+          hideForGuests: false
+        widgets:
+          - type: cluster-health
+            options:
+              title: Cluster Health
+
+      - name: Kubernetes Management
+        icon: fas fa-dharmachakra
+        items:
+          - title: Rancher
+            description: Kubernetes cluster management
+            icon: fas fa-compass
+            url: https://rancher.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Portainer
+            description: Container management UI
+            icon: fas fa-box-open
+            url: https://portainer.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Longhorn
+            description: Distributed block storage
+            icon: fas fa-hdd
+            url: https://longhorn.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: ArgoCD
+            description: GitOps continuous delivery
+            icon: fas fa-sync-alt
+            url: https://argocd.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Tekton Dashboard
+            description: CI/CD pipeline visualization
+            icon: fas fa-code-branch
+            url: http://tekton.cortex.local
+            target: newtab
+            statusCheck: true
+
+          - title: Linkerd Viz
+            description: Service mesh visualization
+            icon: fas fa-project-diagram
+            url: http://linkerd.cortex.local
+            target: newtab
+            statusCheck: true
+
+      - name: Cortex Services
+        icon: fas fa-brain
+        items:
+          - title: Cortex Chat
+            description: AI chat interface
+            icon: fas fa-comments
+            url: https://chat.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Cortex API
+            description: Core Cortex API
+            icon: fas fa-plug
+            url: https://cortex-api.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Cortex MCP Server
+            description: Model Context Protocol server
+            icon: fas fa-network-wired
+            url: https://cortex-mcp.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Langflow
+            description: Visual workflow builder
+            icon: fas fa-project-diagram
+            url: https://langflow.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Cortex Reports
+            description: PDF report generation service
+            icon: fas fa-file-pdf
+            url: https://cortex-reports.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+      - name: ITIL Services
+        icon: fas fa-clipboard-list
+        items:
+          - title: AI Service Desk
+            description: AI-powered service desk
+            icon: fas fa-headset
+            url: http://service-desk.cortex.local
+            target: newtab
+            statusCheck: true
+
+          - title: Phoenix Observability
+            description: Knowledge management & observability
+            icon: fas fa-book
+            url: https://observability.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+      - name: Monitoring & Observability
+        icon: fas fa-chart-line
+        items:
+          - title: Grafana
+            description: Metrics visualization & dashboards
+            icon: fas fa-chart-area
+            url: https://grafana.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Prometheus
+            description: Metrics collection & time-series DB
+            icon: fas fa-database
+            url: https://prometheus.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: CheckMK
+            description: Infrastructure monitoring
+            icon: fas fa-heartbeat
+            url: https://checkmk.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Wazuh Security
+            description: Security monitoring - 8 K3s nodes + UniFi syslog
+            icon: fas fa-shield-virus
+            url: http://wazuh.cortex.local
+            target: newtab
+            statusCheck: true
+
+      - name: Security & Scanning
+        icon: fas fa-shield-alt
+        items:
+          - title: Sandfly
+            description: Linux security & agentless scanning
+            icon: fas fa-bug
+            url: https://sandfly.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+      - name: Database & Storage
+        icon: fas fa-database
+        items:
+          - title: pgAdmin
+            description: PostgreSQL administration
+            icon: fas fa-elephant
+            url: https://pgadmin.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: Redis Commander
+            description: Redis management UI
+            icon: fas fa-memory
+            url: http://redis.cortex.local
+            target: newtab
+            statusCheck: true
+
+      - name: Communication & Utilities
+        icon: fas fa-tools
+        items:
+          - title: SMS Relay
+            description: SMS gateway service
+            icon: fas fa-sms
+            url: https://sms.ry-ops.dev
+            target: newtab
+            statusCheck: true
+
+          - title: GitHub Webhooks
+            description: Tekton webhook receiver
+            icon: fab fa-github
+            url: http://tekton-webhooks.cortex.local
+            target: newtab
+            statusCheck: true
+
+      - name: Network & Infrastructure
+        icon: fas fa-network-wired
+        items:
+          - title: Proxmox VE
+            description: Hypervisor management (10.88.145.40)
+            icon: fas fa-server
+            url: https://10.88.145.40:8006
+            target: newtab
+            statusCheck: true
+
+          - title: UniFi Controller
+            description: Network management (UDM Pro + APs)
+            icon: fas fa-wifi
+            url: https://10.88.140.144:8443
+            target: newtab
+            statusCheck: true
+
+          - title: UniFi (Traefik)
+            description: Via Traefik ingress
+            icon: fas fa-wifi
+            url: http://unifi.cortex.local
+            target: newtab
+            statusCheck: true
+
+      - name: K3s Master Nodes
+        icon: fas fa-server
+        displayData:
+          collapsed: false
+          hideForGuests: false
+        items:
+          - title: k3s-master01 (Larry)
+            description: 10.88.145.190 - Primary master
+            icon: fas fa-server
+            url: http://10.88.145.190:61208
+            target: newtab
+            statusCheck: true
+
+          - title: k3s-master02 (Darryl)
+            description: 10.88.145.193 - Secondary master
+            icon: fas fa-server
+            url: http://10.88.145.193:61208
+            target: newtab
+            statusCheck: true
+
+          - title: k3s-master03 (Darryl)
+            description: 10.88.145.196 - Tertiary master
+            icon: fas fa-server
+            url: http://10.88.145.196:61208
+            target: newtab
+            statusCheck: true
+
+      - name: K3s Worker Nodes
+        icon: fas fa-cubes
+        displayData:
+          collapsed: true
+          hideForGuests: false
+        items:
+          - title: k3s-worker01
+            description: 10.88.145.191
+            icon: fas fa-cube
+            url: http://10.88.145.191:61208
+            target: newtab
+            statusCheck: true
+
+          - title: k3s-worker02
+            description: 10.88.145.192
+            icon: fas fa-cube
+            url: http://10.88.145.192:61208
+            target: newtab
+            statusCheck: true
+
+          - title: k3s-worker03-agent
+            description: 10.88.145.194 - Wazuh manager host
+            icon: fas fa-cube
+            url: http://10.88.145.194:61208
+            target: newtab
+            statusCheck: true
+
+          - title: k3s-worker04
+            description: 10.88.145.195
+            icon: fas fa-cube
+            url: http://10.88.145.195:61208
+            target: newtab
+            statusCheck: true
