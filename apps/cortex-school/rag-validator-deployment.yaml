@@ -48,6 +48,8 @@ spec:
           value: "6379"
         - name: QDRANT_URL
           value: "http://qdrant.cortex-school.svc.cluster.local:6333"
+        - name: QDRANT_PORT
+          value: "6333"
         - name: EMBEDDING_MODEL
           value: "text-embedding-3-large"
         - name: OPENAI_API_KEY
