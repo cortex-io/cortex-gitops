@@ -118,7 +118,7 @@
         "data": {
           "node": {
             "template": {
-              "url": {"value": "http://youtube-channel-intelligence.cortex.svc.cluster.local:8081/videos/recent-summaries?limit=5"},
+              "url": {"value": "http://youtube-ingestion.cortex.svc.cluster.local:8080/api/learnings/summary"},
               "method": {"value": "GET"},
               "headers": {"value": "{\"Content-Type\": \"application/json\"}"}
             }
