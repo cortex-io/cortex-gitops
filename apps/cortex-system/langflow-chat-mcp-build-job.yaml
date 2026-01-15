@@ -19,6 +19,13 @@ spec:
         volumeMounts:
         - name: workspace
           mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
       containers:
       - name: kaniko
         image: gcr.io/kaniko-project/executor:latest
@@ -32,6 +39,13 @@ spec:
         volumeMounts:
         - name: workspace
           mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
       volumes:
       - name: workspace
         emptyDir: {}
