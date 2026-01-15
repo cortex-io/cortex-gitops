@@ -24,7 +24,7 @@ metadata:
     app: rag-validator
     component: rag-validator
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: rag-validator
@@ -43,7 +43,7 @@ spec:
           protocol: TCP
         env:
         - name: REDIS_HOST
-          value: "redis.cortex.svc.cluster.local"
+          value: "redis-queue.cortex.svc.cluster.local"
         - name: REDIS_PORT
           value: "6379"
         - name: QDRANT_URL
@@ -71,11 +71,11 @@ spec:
           readOnly: true
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "200m"
+            memory: "256Mi"
+            cpu: "100m"
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: "1Gi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /health
