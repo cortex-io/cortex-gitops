@@ -2,9 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: 'true'
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     traefik.ingress.kubernetes.io/service.serversscheme: https
     traefik.ingress.kubernetes.io/service.serverstransport: sandfly-transport@kubernetescrd
   labels:
@@ -24,7 +22,3 @@ spec:
               number: 443
         path: /
         pathType: Prefix
-  tls:
-  - hosts:
-    - sandfly.ry-ops.dev
-    secretName: sandfly-tls
