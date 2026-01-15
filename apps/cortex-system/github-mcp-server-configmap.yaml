@@ -1,0 +1,207 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: github-mcp-server-code
+  namespace: cortex-system
+data:
+  server.py: |
+    #!/usr/bin/env python3
+    """
+    GitHub MCP Server - General GitHub operations for Cortex
+    Enables Cortex to read Copilot PR reviews and create feedback loop
+    """
+    import os
+    import json
+    import asyncio
+    from typing import Any
+    from github import Github, GithubException
+
+    # Initialize GitHub client
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    if not GITHUB_TOKEN:
+        raise ValueError("GITHUB_TOKEN environment variable required")
+
+    gh = Github(GITHUB_TOKEN)
+
+    # Simple HTTP server for MCP
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import json
+
+    class MCPHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            request = json.loads(body)
+
+            tool_name = request.get("tool")
+            arguments = request.get("arguments", {})
+
+            try:
+                result = self.handle_tool(tool_name, arguments)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'OK')
+            elif self.path == "/tools":
+                tools = [
+                    {
+                        "name": "list_prs",
+                        "description": "List pull requests for a repository",
+                        "parameters": ["repo", "state"]
+                    },
+                    {
+                        "name": "get_pr_comments",
+                        "description": "Get all review comments on a PR (including Copilot)",
+                        "parameters": ["repo", "pr_number"]
+                    },
+                    {
+                        "name": "get_pr_reviews",
+                        "description": "Get all reviews submitted on a PR",
+                        "parameters": ["repo", "pr_number"]
+                    },
+                    {
+                        "name": "create_pr_comment",
+                        "description": "Add a comment to a PR",
+                        "parameters": ["repo", "pr_number", "body"]
+                    },
+                    {
+                        "name": "create_pr",
+                        "description": "Create a new pull request",
+                        "parameters": ["repo", "title", "body", "head", "base"]
+                    },
+                    {
+                        "name": "get_pr_files",
+                        "description": "Get files changed in a PR",
+                        "parameters": ["repo", "pr_number"]
+                    }
+                ]
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(tools).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def handle_tool(self, name, arguments):
+            if name == "list_prs":
+                repo = gh.get_repo(arguments["repo"])
+                state = arguments.get("state", "open")
+                prs = repo.get_pulls(state=state)
+
+                result = []
+                for pr in list(prs)[:10]:
+                    result.append({
+                        "number": pr.number,
+                        "title": pr.title,
+                        "state": pr.state,
+                        "author": pr.user.login,
+                        "created_at": pr.created_at.isoformat(),
+                        "url": pr.html_url
+                    })
+                return {"prs": result}
+
+            elif name == "get_pr_comments":
+                repo = gh.get_repo(arguments["repo"])
+                pr = repo.get_pull(arguments["pr_number"])
+
+                review_comments = []
+                for comment in pr.get_review_comments():
+                    review_comments.append({
+                        "id": comment.id,
+                        "author": comment.user.login,
+                        "body": comment.body,
+                        "path": comment.path,
+                        "line": comment.line if hasattr(comment, 'line') else None,
+                        "created_at": comment.created_at.isoformat(),
+                        "is_copilot": "copilot" in comment.user.login.lower() or "github-advanced-security" in comment.user.login.lower()
+                    })
+
+                issue_comments = []
+                for comment in pr.get_issue_comments():
+                    issue_comments.append({
+                        "id": comment.id,
+                        "author": comment.user.login,
+                        "body": comment.body,
+                        "created_at": comment.created_at.isoformat(),
+                        "is_copilot": "copilot" in comment.user.login.lower() or "github-advanced-security" in comment.user.login.lower()
+                    })
+
+                return {
+                    "review_comments": review_comments,
+                    "issue_comments": issue_comments,
+                    "total_copilot_comments": sum(1 for c in review_comments + issue_comments if c["is_copilot"])
+                }
+
+            elif name == "get_pr_reviews":
+                repo = gh.get_repo(arguments["repo"])
+                pr = repo.get_pull(arguments["pr_number"])
+
+                reviews = []
+                for review in pr.get_reviews():
+                    reviews.append({
+                        "id": review.id,
+                        "author": review.user.login,
+                        "state": review.state,
+                        "body": review.body or "",
+                        "submitted_at": review.submitted_at.isoformat() if review.submitted_at else None,
+                        "is_copilot": "copilot" in review.user.login.lower() or "github-advanced-security" in review.user.login.lower()
+                    })
+                return {"reviews": reviews}
+
+            elif name == "create_pr_comment":
+                repo = gh.get_repo(arguments["repo"])
+                pr = repo.get_pull(arguments["pr_number"])
+                comment = pr.create_issue_comment(arguments["body"])
+                return {"comment_url": comment.html_url, "comment_id": comment.id}
+
+            elif name == "create_pr":
+                repo = gh.get_repo(arguments["repo"])
+                pr = repo.create_pull(
+                    title=arguments["title"],
+                    body=arguments.get("body", ""),
+                    head=arguments["head"],
+                    base=arguments.get("base", "main")
+                )
+                return {
+                    "number": pr.number,
+                    "url": pr.html_url,
+                    "state": pr.state
+                }
+
+            elif name == "get_pr_files":
+                repo = gh.get_repo(arguments["repo"])
+                pr = repo.get_pull(arguments["pr_number"])
+
+                files = []
+                for file in pr.get_files():
+                    files.append({
+                        "filename": file.filename,
+                        "status": file.status,
+                        "additions": file.additions,
+                        "deletions": file.deletions,
+                        "changes": file.changes
+                    })
+                return {"files": files}
+
+            else:
+                raise ValueError(f"Unknown tool: {name}")
+
+    if __name__ == "__main__":
+        PORT = int(os.environ.get("PORT", 3002))
+        server = HTTPServer(('0.0.0.0', PORT), MCPHandler)
+        print(f"GitHub MCP Server running on port {PORT}")
+        print(f"Tools available at http://localhost:{PORT}/tools")
+        server.serve_forever()
