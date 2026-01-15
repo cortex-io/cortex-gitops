@@ -77,12 +77,7 @@ spec:
             port: 6333
           initialDelaySeconds: 10
           periodSeconds: 5
-  volumeClaimTemplates:
-  - metadata:
-      name: qdrant-storage
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: longhorn
-      resources:
-        requests:
-          storage: 20Gi
+      volumes:
+      - name: qdrant-storage
+        emptyDir:
+          sizeLimit: 20Gi
