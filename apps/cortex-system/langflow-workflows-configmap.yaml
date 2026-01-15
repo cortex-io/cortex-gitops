@@ -984,6 +984,91 @@ data:
         ]
       }
     }
+  11-cortex-daily-brief.json: "{\n  \"name\": \"Cortex Daily Brief - Hello Response\",\n
+    \ \"description\": \"When user says 'hello', provide complete status report with
+    weather, infrastructure, YouTube learnings, and daily insights\",\n  \"data\":
+    {\n    \"nodes\": [\n      {\n        \"id\": \"chatInput\",\n        \"type\":
+    \"ChatInput\",\n        \"position\": {\"x\": 100, \"y\": 300},\n        \"data\":
+    {\n          \"node\": {\n            \"template\": {\n              \"input_value\":
+    {\n                \"value\": \"hello\"\n              }\n            }\n          }\n
+    \       }\n      },\n      {\n        \"id\": \"weatherAPI\",\n        \"type\":
+    \"APIRequest\",\n        \"position\": {\"x\": 400, \"y\": 50},\n        \"data\":
+    {\n          \"node\": {\n            \"template\": {\n              \"url\":
+    {\"value\": \"https://wttr.in/Duluth,MN?format=j1\"},\n              \"method\":
+    {\"value\": \"GET\"},\n              \"headers\": {\"value\": \"{}\"}\n            }\n
+    \         }\n        }\n      },\n      {\n        \"id\": \"k8sStatus\",\n        \"type\":
+    \"MCPClient\",\n        \"position\": {\"x\": 400, \"y\": 150},\n        \"data\":
+    {\n          \"node\": {\n            \"template\": {\n              \"server_url\":
+    {\n                \"value\": \"http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001\"\n
+    \             },\n              \"method\": {\n                \"value\": \"k8s_get_cluster_info\"\n
+    \             },\n              \"params\": {\n                \"value\": \"{}\"\n
+    \             }\n            }\n          }\n        }\n      },\n      {\n        \"id\":
+    \"proxmoxStatus\",\n        \"type\": \"MCPClient\",\n        \"position\": {\"x\":
+    400, \"y\": 250},\n        \"data\": {\n          \"node\": {\n            \"template\":
+    {\n              \"server_url\": {\n                \"value\": \"http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000\"\n
+    \             },\n              \"method\": {\n                \"value\": \"proxmox_get_cluster_status\"\n
+    \             },\n              \"params\": {\n                \"value\": \"{}\"\n
+    \             }\n            }\n          }\n        }\n      },\n      {\n        \"id\":
+    \"sandfly\",\n        \"type\": \"MCPClient\",\n        \"position\": {\"x\":
+    400, \"y\": 350},\n        \"data\": {\n          \"node\": {\n            \"template\":
+    {\n              \"server_url\": {\n                \"value\": \"http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000\"\n
+    \             },\n              \"method\": {\n                \"value\": \"sandfly_get_summary\"\n
+    \             },\n              \"params\": {\n                \"value\": \"{}\"\n
+    \             }\n            }\n          }\n        }\n      },\n      {\n        \"id\":
+    \"network\",\n        \"type\": \"MCPClient\",\n        \"position\": {\"x\":
+    400, \"y\": 450},\n        \"data\": {\n          \"node\": {\n            \"template\":
+    {\n              \"server_url\": {\n                \"value\": \"http://unifi-mcp-server.cortex-system.svc.cluster.local:3000\"\n
+    \             },\n              \"method\": {\n                \"value\": \"unifi_get_network_status\"\n
+    \             },\n              \"params\": {\n                \"value\": \"{}\"\n
+    \             }\n            }\n          }\n        }\n      },\n      {\n        \"id\":
+    \"youtubeLearnings\",\n        \"type\": \"APIRequest\",\n        \"position\":
+    {\"x\": 400, \"y\": 550},\n        \"data\": {\n          \"node\": {\n            \"template\":
+    {\n              \"url\": {\"value\": \"http://youtube-channel-intelligence.cortex.svc.cluster.local:8081/videos/recent-summaries?limit=5\"},\n
+    \             \"method\": {\"value\": \"GET\"},\n              \"headers\": {\"value\":
+    \"{\\\"Content-Type\\\": \\\"application/json\\\"}\"}\n            }\n          }\n
+    \       }\n      },\n      {\n        \"id\": \"mergeData\",\n        \"type\":
+    \"MergeData\",\n        \"position\": {\"x\": 700, \"y\": 300},\n        \"data\":
+    {}\n      },\n      {\n        \"id\": \"claude\",\n        \"type\": \"ChatAnthropic\",\n
+    \       \"position\": {\"x\": 1000, \"y\": 300},\n        \"data\": {\n          \"node\":
+    {\n            \"template\": {\n              \"model_name\": {\"value\": \"claude-sonnet-4-20250514\"},\n
+    \             \"anthropic_api_key\": {\"value\": \"{{ANTHROPIC_API_KEY}}\"},\n
+    \             \"input_value\": {\"value\": \"You are Cortex, an AI infrastructure
+    assistant. The user just said hello. Create a friendly, comprehensive daily brief
+    including:\\n\\n1. \U0001F44B Greeting with current time\\n2. \U0001F324️ Weather
+    in Duluth, MN: {weatherAPI.output}\\n3. ☸️ K3s cluster status: {k8sStatus.output}\\n4.
+    \U0001F5A5️ Proxmox infrastructure: {proxmoxStatus.output}\\n5. \U0001F310 Network
+    status (UniFi): {network.output}\\n6. \U0001F512 Security posture (Sandfly): {sandfly.output}\\n7.
+    \U0001F4DA What I learned today from YouTube: {youtubeLearnings.output}\\n   -
+    Summarize the most interesting insights from recent video summaries\\n   - Mention
+    specific technologies, concepts, or best practices\\n   - Keep it concise but
+    informative\\n8. \U0001F3AF My plans for today:\\n   - Monitor infrastructure
+    health\\n   - Process queued YouTube videos\\n   - Respond to alerts\\n   - Optimize
+    resource usage\\n\\nBe warm, professional, and slightly playful. Format nicely
+    with emojis. Keep the YouTube learnings section engaging - highlight actionable
+    insights or cool technologies mentioned in the videos.\"}\n            }\n          }\n
+    \       }\n      },\n      {\n        \"id\": \"output\",\n        \"type\": \"ChatOutput\",\n
+    \       \"position\": {\"x\": 1300, \"y\": 300},\n        \"data\": {\n          \"node\":
+    {\n            \"template\": {\n              \"input_value\": {\n                \"value\":
+    \"{claude.text}\"\n              }\n            }\n          }\n        }\n      }\n
+    \   ],\n    \"edges\": [\n      {\n        \"source\": \"chatInput\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"weatherAPI\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"k8sStatus\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"proxmoxStatus\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"sandfly\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"network\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"youtubeLearnings\",\n        \"target\":
+    \"mergeData\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"mergeData\",\n        \"target\":
+    \"claude\",\n        \"sourceHandle\": \"output\",\n        \"targetHandle\":
+    \"input\"\n      },\n      {\n        \"source\": \"claude\",\n        \"target\":
+    \"output\",\n        \"sourceHandle\": \"text\",\n        \"targetHandle\": \"input\"\n
+    \     }\n    ]\n  }\n}\n"
 kind: ConfigMap
 metadata:
   creationTimestamp: null
