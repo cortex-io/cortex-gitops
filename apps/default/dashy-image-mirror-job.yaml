@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dashy-image-mirror
+  namespace: default
+  labels:
+    app: dashy
+    job-type: image-mirror
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: dashy
+        job-type: image-mirror
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: skopeo
+        image: quay.io/skopeo/stable:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Copying lissy93/dashy:latest to local registry..."
+          skopeo copy \
+            --dest-tls-verify=false \
+            docker://docker.io/lissy93/dashy:latest \
+            docker://10.43.170.72:5000/dashy:latest
+          echo "Image mirrored successfully!"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"

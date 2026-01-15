@@ -22,8 +22,8 @@ spec:
     spec:
       containers:
       - name: dashy
-        image: lissy93/dashy:latest
-        imagePullPolicy: IfNotPresent  # Use cached image if available
+        image: 10.43.170.72:5000/dashy:latest
+        imagePullPolicy: IfNotPresent  # Use local registry image
         ports:
         - containerPort: 80
           protocol: TCP
