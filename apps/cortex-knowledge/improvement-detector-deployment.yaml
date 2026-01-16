@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
       - args:
-        - 'pip install --no-cache-dir kubernetes pymongo neo4j prometheus-api-client
+        - 'pip install --user --no-cache-dir kubernetes pymongo neo4j prometheus-api-client
           prometheus_client pyyaml numpy pandas scikit-learn requests && python /app/detector.py
 
           '
