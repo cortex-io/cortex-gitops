@@ -20,7 +20,7 @@ spec:
       serviceAccountName: configmap-janitor-sa
       containers:
       - name: janitor
-        image: bitnami/kubectl:latest
+        image: rancher/kubectl:v1.28.3
         command:
         - /bin/bash
         - -c
