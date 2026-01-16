@@ -1,0 +1,76 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llm-curriculum-video-1
+  namespace: cortex
+  labels:
+    app: youtube-ingestion
+    component: llm-curriculum
+    priority: high
+    video-number: "1"
+spec:
+  ttlSecondsAfterFinished: 86400  # Keep for 24 hours
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: youtube-ingestion
+        component: llm-curriculum
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: ingest-video
+        image: 10.43.170.72:5000/youtube-ingestion:cached
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: YOUTUBE_VIDEO_URL
+          value: "https://www.youtube.com/watch?v=XctooiH0moI"
+        - name: SOURCE
+          value: "llm-curriculum"
+        - name: VIDEO_NUMBER
+          value: "1"
+        - name: REDIS_HOST
+          value: redis-queue.cortex.svc.cluster.local
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_ENABLED
+          value: "true"
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: api-key
+              name: anthropic-api-key
+        - name: TRANSCRIPTS_DIR
+          value: /data/transcripts
+        - name: KNOWLEDGE_DIR
+          value: /data/knowledge
+        - name: CACHE_DIR
+          value: /data/cache
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Processing LLM Curriculum Video 1"
+          echo "URL: ${YOUTUBE_VIDEO_URL}"
+          echo "Source: ${SOURCE}"
+          echo ""
+
+          # Trigger video ingestion
+          node /app/src/index.js --video="${YOUTUBE_VIDEO_URL}" --source="${SOURCE}"
+
+          echo ""
+          echo "Video 1 ingestion complete"
+        volumeMounts:
+        - mountPath: /data
+          name: youtube-data
+        resources:
+          requests:
+            cpu: 125m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: youtube-data
+        persistentVolumeClaim:
+          claimName: youtube-data-pvc
