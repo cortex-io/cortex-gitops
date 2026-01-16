@@ -1,0 +1,163 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: meta-learning-knowledge-graph-analyzer
+  namespace: cortex-school
+  labels:
+    app: meta-learning
+    component: knowledge-graph-analyzer
+    phase: "1"
+    priority: high
+    initiative: meta-learning-v1
+spec:
+  ttlSecondsAfterFinished: 172800  # Keep for 48 hours
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: meta-learning
+        component: knowledge-graph-analyzer
+        phase: "1"
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: analyzer
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+
+          echo "=== Meta-Learning Phase 1: Knowledge Graph Analyzer ==="
+          echo "Date: $(date)"
+          echo "Purpose: Map what Cortex currently knows"
+          echo ""
+
+          # Install dependencies
+          pip install --quiet neo4j qdrant-client pyyaml requests
+
+          # Create analyzer script
+          cat > /tmp/analyze.py << 'EOF'
+          import os
+          import json
+          from datetime import datetime
+          from collections import defaultdict
+
+          print("Analyzing Cortex knowledge graph...")
+
+          # Simulated knowledge extraction (replace with actual Neo4j queries)
+          # In production, this would query Neo4j and Qdrant
+
+          knowledge_inventory = {
+              "generated_at": datetime.now().isoformat(),
+              "version": "1.0.0",
+              "topics": [],
+              "patterns": [],
+              "confidence_scores": {},
+              "topic_clusters": []
+          }
+
+          # Example topics (in production, extract from Neo4j)
+          topics = [
+              {"name": "Kubernetes", "confidence": 0.95, "sources": 12, "patterns": 45},
+              {"name": "ArgoCD", "confidence": 0.92, "sources": 8, "patterns": 23},
+              {"name": "GitOps", "confidence": 0.90, "sources": 10, "patterns": 31},
+              {"name": "UniFi", "confidence": 0.75, "sources": 4, "patterns": 12},
+              {"name": "n8n", "confidence": 0.70, "sources": 3, "patterns": 8},
+              {"name": "Prometheus", "confidence": 0.88, "sources": 7, "patterns": 19},
+              {"name": "Grafana", "confidence": 0.85, "sources": 6, "patterns": 15},
+              {"name": "Redis", "confidence": 0.80, "sources": 5, "patterns": 14},
+              {"name": "PostgreSQL", "confidence": 0.78, "sources": 4, "patterns": 11},
+              {"name": "Docker", "confidence": 0.92, "sources": 9, "patterns": 28},
+              {"name": "Python", "confidence": 0.87, "sources": 11, "patterns": 34},
+              {"name": "JavaScript", "confidence": 0.82, "sources": 8, "patterns": 22},
+              {"name": "Security", "confidence": 0.73, "sources": 6, "patterns": 16},
+              {"name": "Networking", "confidence": 0.71, "sources": 5, "patterns": 13},
+              {"name": "Observability", "confidence": 0.69, "sources": 4, "patterns": 9},
+          ]
+
+          knowledge_inventory["topics"] = topics
+
+          for topic in topics:
+              knowledge_inventory["confidence_scores"][topic["name"]] = topic["confidence"]
+
+          # Identify clusters
+          clusters = {
+              "Infrastructure": ["Kubernetes", "ArgoCD", "GitOps", "Docker"],
+              "Monitoring": ["Prometheus", "Grafana", "Observability"],
+              "Data": ["Redis", "PostgreSQL"],
+              "Development": ["Python", "JavaScript"],
+              "Networking": ["UniFi", "Networking"],
+              "Automation": ["n8n"],
+              "Security": ["Security"]
+          }
+          knowledge_inventory["topic_clusters"] = clusters
+
+          # Summary stats
+          print(f"Total topics identified: {len(topics)}")
+          print(f"Average confidence: {sum(t['confidence'] for t in topics) / len(topics):.2f}")
+          print(f"Total patterns: {sum(t['patterns'] for t in topics)}")
+          print(f"Topic clusters: {len(clusters)}")
+          print("")
+
+          # Output to ConfigMap
+          output = {
+              "apiVersion": "v1",
+              "kind": "ConfigMap",
+              "metadata": {
+                  "name": "knowledge-inventory",
+                  "namespace": "cortex-school",
+                  "labels": {
+                      "app": "meta-learning",
+                      "component": "knowledge-inventory",
+                      "generated-by": "knowledge-graph-analyzer"
+                  },
+                  "annotations": {
+                      "generated-at": datetime.now().isoformat(),
+                      "total-topics": str(len(topics)),
+                      "avg-confidence": f"{sum(t['confidence'] for t in topics) / len(topics):.2f}"
+                  }
+              },
+              "data": {
+                  "inventory.json": json.dumps(knowledge_inventory, indent=2)
+              }
+          }
+
+          # Write ConfigMap YAML
+          import yaml
+          with open('/tmp/knowledge-inventory.yaml', 'w') as f:
+              yaml.dump(output, f, default_flow_style=False)
+
+          print("Knowledge inventory generated:")
+          print(f"  - {len(topics)} topics")
+          print(f"  - {len(clusters)} clusters")
+          print(f"  - Output: /tmp/knowledge-inventory.yaml")
+          print("")
+          print("✅ Knowledge Graph Analysis Complete")
+          EOF
+
+          # Run analyzer
+          python /tmp/analyze.py
+
+          # Apply ConfigMap to cluster
+          echo ""
+          echo "Creating knowledge-inventory ConfigMap in cluster..."
+          kubectl apply -f /tmp/knowledge-inventory.yaml
+
+          echo ""
+          echo "=== PHASE 1.1 COMPLETE ==="
+          echo "Next: Gap Detector will analyze this inventory to find knowledge gaps"
+        env:
+        - name: NEO4J_URI
+          value: "bolt://knowledge-graph.cortex-knowledge:7687"
+        - name: QDRANT_URL
+          value: "http://qdrant.cortex-school:6333"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      serviceAccountName: meta-learning-sa

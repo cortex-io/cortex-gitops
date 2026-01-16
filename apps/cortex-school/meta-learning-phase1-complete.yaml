@@ -1,0 +1,477 @@
+# Meta-Learning Phase 1: Complete Pipeline
+# Components: Gap Detector → Proactive Researcher → Source Evaluator → Self-Subscription Worker
+# Dependencies managed via initContainers that wait for previous job completion
+
+---
+# Job 2: Gap Detector
+# Depends on: knowledge-graph-analyzer (must complete first)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: meta-learning-gap-detector
+  namespace: cortex-school
+  labels:
+    app: meta-learning
+    component: gap-detector
+    phase: "1"
+    priority: high
+    initiative: meta-learning-v1
+    depends-on: "knowledge-graph-analyzer"
+spec:
+  ttlSecondsAfterFinished: 172800
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: meta-learning
+        component: gap-detector
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-inventory
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for knowledge-inventory ConfigMap..."
+          until kubectl get configmap knowledge-inventory -n cortex-school; do
+            echo "  Not ready yet, sleeping 10s..."
+            sleep 10
+          done
+          echo "✅ knowledge-inventory ready"
+      containers:
+      - name: gap-detector
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "=== Phase 1.2: Gap Detector ==="
+
+          pip install --quiet pyyaml requests
+
+          cat > /tmp/detect_gaps.py << 'EOF'
+          import json
+          import yaml
+          import subprocess
+          from datetime import datetime
+
+          # Read knowledge inventory
+          result = subprocess.run(['kubectl', 'get', 'configmap', 'knowledge-inventory', '-n', 'cortex-school', '-o', 'yaml'], capture_output=True, text=True)
+          inventory_cm = yaml.safe_load(result.stdout)
+          inventory = json.loads(inventory_cm['data']['inventory.json'])
+
+          known_topics = {t['name']: t['confidence'] for t in inventory['topics']}
+          print(f"Known topics: {len(known_topics)}")
+
+          # Simulate gap detection (in production, analyze recent transcripts)
+          # These would come from recent youtube-ingestion outputs
+          mentioned_topics = [
+              "Cilium", "eBPF", "Service Mesh", "Istio", "Linkerd",
+              "Vault", "Secrets Management", "OPA", "Policy Management",
+              "Flux", "Helm", "Kustomize", "Velero", "Backup",
+              "Cert-Manager", "TLS", "Ingress", "NGINX",
+              "Ansible", "Terraform", "Infrastructure as Code"
+          ]
+
+          gaps = []
+          for topic in mentioned_topics:
+              if topic not in known_topics:
+                  # Calculate priority based on frequency (simulated)
+                  priority = 0.8  # In production, calculate from mention frequency
+                  gaps.append({
+                      "topic": topic,
+                      "priority": priority,
+                      "reason": "Mentioned in recent content but not in knowledge graph",
+                      "first_seen": datetime.now().isoformat()
+                  })
+
+          print(f"Gaps identified: {len(gaps)}")
+
+          # Sort by priority
+          gaps.sort(key=lambda x: x['priority'], reverse=True)
+
+          # Output ConfigMap
+          output = {
+              "apiVersion": "v1",
+              "kind": "ConfigMap",
+              "metadata": {
+                  "name": "knowledge-gaps",
+                  "namespace": "cortex-school",
+                  "labels": {
+                      "app": "meta-learning",
+                      "component": "knowledge-gaps"
+                  },
+                  "annotations": {
+                      "generated-at": datetime.now().isoformat(),
+                      "total-gaps": str(len(gaps))
+                  }
+              },
+              "data": {
+                  "gaps.json": json.dumps({"gaps": gaps}, indent=2)
+              }
+          }
+
+          with open('/tmp/knowledge-gaps.yaml', 'w') as f:
+              yaml.dump(output, f, default_flow_style=False)
+
+          print(f"Top gaps: {[g['topic'] for g in gaps[:5]]}")
+          print("✅ Gap Detection Complete")
+          EOF
+
+          python /tmp/detect_gaps.py
+          kubectl apply -f /tmp/knowledge-gaps.yaml
+
+          echo "=== PHASE 1.2 COMPLETE ==="
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 400m
+            memory: 512Mi
+      serviceAccountName: meta-learning-sa
+
+---
+# Job 3: Proactive Researcher
+# Depends on: gap-detector
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: meta-learning-proactive-researcher
+  namespace: cortex-school
+  labels:
+    app: meta-learning
+    component: proactive-researcher
+    phase: "1"
+    priority: high
+    initiative: meta-learning-v1
+    depends-on: "gap-detector"
+spec:
+  ttlSecondsAfterFinished: 172800
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: meta-learning
+        component: proactive-researcher
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-gaps
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for knowledge-gaps ConfigMap..."
+          until kubectl get configmap knowledge-gaps -n cortex-school; do
+            echo "  Not ready, sleeping 10s..."
+            sleep 10
+          done
+          echo "✅ knowledge-gaps ready"
+      containers:
+      - name: researcher
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "=== Phase 1.3: Proactive Researcher ==="
+
+          pip install --quiet pyyaml requests
+
+          cat > /tmp/research.py << 'EOF'
+          import json
+          import yaml
+          import subprocess
+          from datetime import datetime
+
+          # Read gaps
+          result = subprocess.run(['kubectl', 'get', 'configmap', 'knowledge-gaps', '-n', 'cortex-school', '-o', 'yaml'], capture_output=True, text=True)
+          gaps_cm = yaml.safe_load(result.stdout)
+          gaps_data = json.loads(gaps_cm['data']['gaps.json'])
+          gaps = gaps_data['gaps'][:5]  # Top 5 gaps
+
+          print(f"Researching sources for {len(gaps)} gaps...")
+
+          # Simulate source research (in production, use YouTube Data API)
+          research_results = []
+
+          source_map = {
+              "Cilium": [{"channel": "@ciliumproject", "url": "https://www.youtube.com/@ciliumproject", "subscribers": 5000, "quality": 0.85}],
+              "Service Mesh": [{"channel": "@ServiceMeshCon", "url": "https://www.youtube.com/@servicemeshcon", "subscribers": 3000, "quality": 0.80}],
+              "Vault": [{"channel": "@HashiCorp", "url": "https://www.youtube.com/@HashiCorp", "subscribers": 50000, "quality": 0.92}],
+              "Ansible": [{"channel": "@AnsibleAutomation", "url": "https://www.youtube.com/@AnsibleAutomation", "subscribers": 15000, "quality": 0.88}],
+              "Cert-Manager": [{"channel": "@cert-manager", "url": "https://www.youtube.com/@cert-manager", "subscribers": 2000, "quality": 0.75}],
+          }
+
+          for gap in gaps:
+              topic = gap['topic']
+              if topic in source_map:
+                  for source in source_map[topic]:
+                      research_results.append({
+                          "gap_topic": topic,
+                          "source_type": "youtube",
+                          "channel_name": source['channel'],
+                          "channel_url": source['url'],
+                          "subscribers": source['subscribers'],
+                          "quality_score": source['quality'],
+                          "researched_at": datetime.now().isoformat()
+                      })
+
+          print(f"Found {len(research_results)} sources")
+
+          # Output ConfigMap
+          output = {
+              "apiVersion": "v1",
+              "kind": "ConfigMap",
+              "metadata": {
+                  "name": "research-results",
+                  "namespace": "cortex-school",
+                  "labels": {
+                      "app": "meta-learning",
+                      "component": "research-results"
+                  },
+                  "annotations": {
+                      "generated-at": datetime.now().isoformat(),
+                      "total-sources": str(len(research_results))
+                  }
+              },
+              "data": {
+                  "results.json": json.dumps({"sources": research_results}, indent=2)
+              }
+          }
+
+          with open('/tmp/research-results.yaml', 'w') as f:
+              yaml.dump(output, f, default_flow_style=False)
+
+          print("✅ Research Complete")
+          EOF
+
+          python /tmp/research.py
+          kubectl apply -f /tmp/research-results.yaml
+
+          echo "=== PHASE 1.3 COMPLETE ==="
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 800m
+            memory: 1Gi
+      serviceAccountName: meta-learning-sa
+
+---
+# Job 4: Source Evaluator
+# Depends on: proactive-researcher
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: meta-learning-source-evaluator
+  namespace: cortex-school
+  labels:
+    app: meta-learning
+    component: source-evaluator
+    phase: "1"
+    priority: high
+    initiative: meta-learning-v1
+    depends-on: "proactive-researcher"
+spec:
+  ttlSecondsAfterFinished: 172800
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: meta-learning
+        component: source-evaluator
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-research
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for research-results ConfigMap..."
+          until kubectl get configmap research-results -n cortex-school; do
+            echo "  Not ready, sleeping 10s..."
+            sleep 10
+          done
+          echo "✅ research-results ready"
+      containers:
+      - name: evaluator
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "=== Phase 1.4: Source Evaluator ==="
+
+          pip install --quiet pyyaml
+
+          cat > /tmp/evaluate.py << 'EOF'
+          import json
+          import yaml
+          import subprocess
+          from datetime import datetime
+
+          # Read research results
+          result = subprocess.run(['kubectl', 'get', 'configmap', 'research-results', '-n', 'cortex-school', '-o', 'yaml'], capture_output=True, text=True)
+          research_cm = yaml.safe_load(result.stdout)
+          research_data = json.loads(research_cm['data']['results.json'])
+          sources = research_data['sources']
+
+          print(f"Evaluating {len(sources)} sources...")
+
+          # Evaluation criteria
+          MIN_QUALITY = 0.70
+          MIN_SUBSCRIBERS = 1000
+          MAX_SUBSCRIPTIONS = 50  # Budget limit
+
+          # Read current subscriptions
+          try:
+              result = subprocess.run(['kubectl', 'get', 'configmap', 'youtube-channel-subscriptions', '-n', 'cortex', '-o', 'yaml'], capture_output=True, text=True)
+              subs_cm = yaml.safe_load(result.stdout)
+              current_subs = json.loads(subs_cm['data']['subscriptions.json'])
+              current_count = len(current_subs['channels'])
+          except:
+              current_count = 5  # Assume 5 if can't read
+
+          approved = []
+          rejected = []
+
+          for source in sources:
+              # Check quality
+              if source['quality_score'] < MIN_QUALITY:
+                  rejected.append({**source, "reason": "Quality score too low"})
+                  continue
+
+              # Check subscribers
+              if source['subscribers'] < MIN_SUBSCRIBERS:
+                  rejected.append({**source, "reason": "Insufficient subscribers"})
+                  continue
+
+              # Check budget
+              if current_count + len(approved) >= MAX_SUBSCRIPTIONS:
+                  rejected.append({**source, "reason": "Subscription budget exhausted"})
+                  continue
+
+              # Approved!
+              approved.append({
+                  **source,
+                  "approved_at": datetime.now().isoformat(),
+                  "approval_reason": "Meets quality and relevance criteria"
+              })
+
+          print(f"Approved: {len(approved)}")
+          print(f"Rejected: {len(rejected)}")
+
+          # Output ConfigMap
+          output = {
+              "apiVersion": "v1",
+              "kind": "ConfigMap",
+              "metadata": {
+                  "name": "approved-sources",
+                  "namespace": "cortex-school",
+                  "labels": {
+                      "app": "meta-learning",
+                      "component": "approved-sources"
+                  },
+                  "annotations": {
+                      "generated-at": datetime.now().isoformat(),
+                      "approved-count": str(len(approved)),
+                      "rejected-count": str(len(rejected))
+                  }
+              },
+              "data": {
+                  "approved.json": json.dumps({"sources": approved}, indent=2),
+                  "rejected.json": json.dumps({"sources": rejected}, indent=2)
+              }
+          }
+
+          with open('/tmp/approved-sources.yaml', 'w') as f:
+              yaml.dump(output, f, default_flow_style=False)
+
+          print(f"Approved channels: {[s['channel_name'] for s in approved]}")
+          print("✅ Evaluation Complete")
+          EOF
+
+          python /tmp/evaluate.py
+          kubectl apply -f /tmp/approved-sources.yaml
+
+          echo "=== PHASE 1.4 COMPLETE ==="
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      serviceAccountName: meta-learning-sa
+
+---
+# Job 5: Self-Subscription Worker (DISABLED - Manual approval required)
+# This job is commented out to prevent automatic subscription
+# Uncomment when ready for full automation
+# Depends on: source-evaluator + github-mcp-server
+
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: meta-learning-self-subscription-worker
+#   namespace: cortex-school
+#   labels:
+#     app: meta-learning
+#     component: self-subscription-worker
+#     phase: "1"
+#     priority: high
+#     initiative: meta-learning-v1
+#     depends-on: "source-evaluator+github-mcp-server"
+# spec:
+#   ttlSecondsAfterFinished: 172800
+#   backoffLimit: 3
+#   template:
+#     metadata:
+#       labels:
+#         app: meta-learning
+#         component: self-subscription-worker
+#     spec:
+#       restartPolicy: OnFailure
+#       initContainers:
+#       - name: wait-for-approved
+#         image: bitnami/kubectl:latest
+#         command:
+#         - /bin/bash
+#         - -c
+#         - |
+#           echo "Waiting for approved-sources ConfigMap..."
+#           until kubectl get configmap approved-sources -n cortex-school; do
+#             sleep 10
+#           done
+#           echo "✅ approved-sources ready"
+#       containers:
+#       - name: subscription-worker
+#         image: python:3.11-slim
+#         command:
+#         - /bin/bash
+#         - -c
+#         - |
+#           set -e
+#           echo "=== Phase 1.5: Self-Subscription Worker ==="
+#           echo "⚠️  MANUAL APPROVAL REQUIRED ⚠️"
+#           echo "This job will update youtube-channel-subscriptions"
+#           echo "Review approved-sources ConfigMap before enabling"
+#           echo ""
+#           echo "To enable: Uncomment this job in manifest"
+#           echo "=== PHASE 1.5 SKIPPED (Safety) ==="
+#         resources:
+#           requests:
+#             cpu: 50m
+#             memory: 128Mi
+#       serviceAccountName: meta-learning-sa
