@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: implementation-workers
+  namespace: cortex-ai-infra
+  labels:
+    app: implementation-workers
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/shared-service: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: implementation-workers
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: implementation-workers
+  namespace: cortex-ai-infra
+  labels:
+    app: implementation-workers
+    component: workers
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/shared-service: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: implementation-workers
+  template:
+    metadata:
+      labels:
+        app: implementation-workers
+        component: workers
+    spec:
+      serviceAccountName: implementation-worker
+      containers:
+      - name: worker
+        image: 10.43.170.72:5000/cortex-implementation-worker:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: REDIS_HOST
+          value: "redis-queue.cortex.svc.cluster.local"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: WORKER_TYPE
+          value: "all"
+        - name: GITHUB_REPO
+          value: "ry-ops/cortex-gitops"
+        - name: GITHUB_BRANCH
+          value: "main"
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-token
+              key: token
+              optional: true
+        - name: COMMIT_AUTHOR_NAME
+          value: "Cortex AI Infrastructure"
+        - name: COMMIT_AUTHOR_EMAIL
+          value: "ai-infra@cortex.ai"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: implementation-worker
+  namespace: cortex-ai-infra
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: implementation-worker-ai-infra
+  labels:
+    app.kubernetes.io/part-of: cortex
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications"]
+  verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: implementation-worker-ai-infra
+  labels:
+    app.kubernetes.io/part-of: cortex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: implementation-worker-ai-infra
+subjects:
+- kind: ServiceAccount
+  name: implementation-worker
+  namespace: cortex-ai-infra

@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-validator
+  namespace: cortex-ai-infra
+  labels:
+    app: rag-validator
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/shared-service: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: rag-validator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-validator
+  namespace: cortex-ai-infra
+  labels:
+    app: rag-validator
+    component: rag-validator
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/shared-service: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-validator
+  template:
+    metadata:
+      labels:
+        app: rag-validator
+        component: rag-validator
+    spec:
+      containers:
+      - name: validator
+        image: 10.43.170.72:5000/cortex-rag-validator:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: REDIS_HOST
+          value: "redis-queue.cortex.svc.cluster.local"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: QDRANT_URL
+          value: "http://qdrant.cortex-ai-infra.svc.cluster.local:6333"
+        - name: QDRANT_PORT
+          value: "6333"
+        - name: EMBEDDING_MODEL
+          value: "text-embedding-3-large"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-api-key
+              key: api-key
+              optional: true
+        - name: GITOPS_REPO_PATH
+          value: "/gitops"
+        - name: DOCS_REPO_PATH
+          value: "/docs"
+        - name: LOG_LEVEL
+          value: "INFO"
+        volumeMounts:
+        - name: gitops-repo
+          mountPath: /gitops
+          readOnly: true
+        - name: docs-repo
+          mountPath: /docs
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: gitops-repo
+        emptyDir: {}
+      - name: docs-repo
+        emptyDir: {}
+      initContainers:
+      - name: clone-gitops
+        image: alpine/git:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          git clone https://github.com/ry-ops/cortex-gitops.git /gitops
+        volumeMounts:
+        - name: gitops-repo
+          mountPath: /gitops
+      - name: clone-docs
+        image: alpine/git:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          git clone https://github.com/ry-ops/cortex-docs.git /docs
+        volumeMounts:
+        - name: docs-repo
+          mountPath: /docs
