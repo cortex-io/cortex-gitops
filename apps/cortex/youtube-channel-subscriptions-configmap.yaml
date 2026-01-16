@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: youtube-channel-subscriptions
+  namespace: cortex
+  labels:
+    app: youtube-channel-intelligence
+    component: knowledge
+data:
+  subscriptions.json: |
+    {
+      "channels": [
+        {
+          "name": "Red Hat",
+          "url": "https://www.youtube.com/@redhat",
+          "channel_id": "@redhat",
+          "priority": "high",
+          "category": "infrastructure",
+          "description": "Daily infrastructure changes and updates",
+          "poll_frequency": "daily",
+          "tags": ["kubernetes", "openshift", "enterprise", "infrastructure"]
+        },
+        {
+          "name": "UniFi Academy",
+          "url": "https://www.youtube.com/@UniFi-Academy",
+          "channel_id": "@UniFi-Academy",
+          "priority": "medium",
+          "category": "networking",
+          "description": "UniFi network infrastructure updates for UniFi MCP server",
+          "poll_frequency": "daily",
+          "tags": ["unifi", "networking", "mcp-server"]
+        },
+        {
+          "name": "n8n",
+          "url": "https://www.youtube.com/@n8n-io",
+          "channel_id": "@n8n-io",
+          "priority": "medium",
+          "category": "automation",
+          "description": "n8n workflow automation and security updates",
+          "poll_frequency": "daily",
+          "tags": ["n8n", "automation", "workflows", "security"]
+        },
+        {
+          "name": "Sandfly Security",
+          "url": "https://www.youtube.com/@SandflySecurity",
+          "channel_id": "@SandflySecurity",
+          "priority": "medium",
+          "category": "security",
+          "description": "Security monitoring and incident response",
+          "poll_frequency": "daily",
+          "tags": ["security", "monitoring", "incident-response"]
+        }
+      ],
+      "websites": [
+        {
+          "name": "UniFi Academy Website",
+          "url": "https://academy.ui.com/topics/unifi-architecture-overview",
+          "priority": "medium",
+          "category": "networking",
+          "description": "UniFi architecture documentation and updates",
+          "poll_frequency": "weekly",
+          "tags": ["unifi", "documentation", "architecture"]
+        }
+      ],
+      "settings": {
+        "default_poll_frequency": "daily",
+        "high_priority_poll_frequency": "every_6_hours",
+        "enable_notifications": true,
+        "auto_analyze_new_videos": true,
+        "max_videos_per_poll": 5
+      }
+    }
