@@ -1,6 +1,6 @@
 # Claude Code Operational Directive
-**Version**: 3.1.0 (Project Thunder)
-**Date**: 2026-01-11
+**Version**: 3.1.0
+**Date**: 2026-01-16
 **Status**: ACTIVE
 
 ---
@@ -378,8 +378,57 @@ cd ~/cortex-platform && git status
 
 ---
 
+## ⚠️ CRITICAL OPERATIONAL PRINCIPLES
+
+### No Quick Fixes
+
+**When something doesn't work: STOP. ROLLBACK. RETHINK.**
+
+**NEVER** iterate through multiple "quick fix" attempts:
+- ❌ Try solution A → commit → test → fails
+- ❌ Try solution B → commit → test → fails
+- ❌ Try solution C → commit → test → works
+
+**ALWAYS** follow proper workflow:
+1. **STOP** - When you hit an error, stop immediately
+2. **ANALYZE** - Understand the root cause completely
+3. **DESIGN** - Plan a proper solution (use EnterPlanMode if needed)
+4. **ROLLBACK** - Revert any failed attempts via Git
+5. **IMPLEMENT** - Apply the designed solution **once**
+6. **VERIFY** - Confirm it works
+7. **DOCUMENT** - Explain what was wrong and why the fix works
+
+### No Local Development
+
+**ALL development happens in the cluster via GitOps.**
+
+**NEVER** run code locally unless explicitly instructed:
+- ❌ NO local `docker build`
+- ❌ NO local `npm start` / `python app.py`
+- ❌ NO local service testing
+- ❌ NO "let me test this locally first"
+
+**ALWAYS** use GitOps workflow:
+- ✅ Write manifests in `~/Projects/cortex-gitops`
+- ✅ Commit and push to GitHub
+- ✅ Let ArgoCD deploy to cluster
+- ✅ Verify in cluster with kubectl
+- ✅ Rollback via Git if it fails
+
+### When to STOP and Ask
+
+If you encounter infrastructure that requires local development or quick fixes:
+1. **STOP immediately**
+2. **Document the issue**
+3. **Ask the user** how to proceed
+
+**See**: `docs/OPERATIONAL-PRINCIPLES.md` for complete details
+
+---
+
 ## Version History
 
+- **v3.1.0** (2026-01-16): Added Critical Operational Principles (No Quick Fixes, No Local Dev)
 - **v3.0.0** (2026-01-11): Project Thunder - Full GitOps migration
 - **v2.1.0** (2025-12-XX): Pre-GitOps control plane directive
 - **v1.0.0** (2025-11-XX): Initial directive
