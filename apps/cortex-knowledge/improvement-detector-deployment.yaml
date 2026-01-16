@@ -45,6 +45,8 @@ spec:
         env:
         - name: HOME
           value: /tmp
+        - name: PYTHONUSERBASE
+          value: /tmp/.local
         - name: PYTHONUNBUFFERED
           value: '1'
         - name: GITHUB_TOKEN
