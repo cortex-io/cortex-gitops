@@ -43,6 +43,8 @@ spec:
         - /bin/bash
         - -c
         env:
+        - name: HOME
+          value: /tmp
         - name: PYTHONUNBUFFERED
           value: '1'
         - name: GITHUB_TOKEN
