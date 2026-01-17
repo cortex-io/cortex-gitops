@@ -32,7 +32,7 @@ metadata:
     cortex.ai/layer-domain: "knowledge-tools"
     cortex.ai/distillation-target: "tool-chain-patterns"
 spec:
-  replicas: 0  # Start at zero, KEDA will scale up
+  replicas: 1  # TODO: Change to 0 once KEDA is installed
   selector:
     matchLabels:
       app: mcp-server
