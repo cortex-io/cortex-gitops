@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-dns
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: 'true'
+  labels:
+    app: kubernetes-mcp-server
+  name: kubernetes-mcp-ingress
+  namespace: cortex-system
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: kubernetes-mcp.ry-ops.dev
+    http:
+      paths:
+      - backend:
+          service:
+            name: kubernetes-mcp-server
+            port:
+              number: 3001
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - kubernetes-mcp.ry-ops.dev
+    secretName: kubernetes-mcp-tls
