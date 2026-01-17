@@ -1,9 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    argocd.argoproj.io/tracking-id: cortex-system:apps/Deployment:cortex-system/cloudflare-mcp-server
-    deployment.kubernetes.io/revision: '2'
   labels:
     app: cloudflare-mcp-server
   name: cloudflare-mcp-server
@@ -22,95 +19,96 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      annotations:
-        kubectl.kubernetes.io/restartedAt: '2026-01-03T21:07:46Z'
-      creationTimestamp: null
       labels:
         app: cloudflare-mcp-server
     spec:
       terminationGracePeriodSeconds: 45
-      containers:
-      - args:
-        - 'set -e
-
-          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 cloudflare>=2.0.0 pydantic>=2.0.0
-          python-dotenv>=1.0.0
-
-          echo "MCP server ready for stdio connections"
-
-          tail -f /dev/null
-
-          '
-        command:
-        - /bin/bash
-        - -c
-        env:
-        - name: CLOUDFLARE_API_TOKEN
-          value: placeholder-token
-        image: python:3.11-slim
-        imagePullPolicy: IfNotPresent
-        name: app
-        lifecycle:
-          preStop:
-            exec:
-              command:
-              - /bin/sh
-              - -c
-              - sleep 15
-        readinessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - "test -e /dev/null"
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 3
-          successThreshold: 1
-          failureThreshold: 2
-        livenessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - "test -e /dev/null"
-          initialDelaySeconds: 30
-          periodSeconds: 30
-          timeoutSeconds: 5
-          failureThreshold: 3
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: 400m
-            memory: 256Mi
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-        volumeMounts:
-        - mountPath: /app
-          name: repo
-        workingDir: /app
-      dnsPolicy: ClusterFirst
       initContainers:
-      - args:
+      - name: git-clone
+        image: alpine/git
+        imagePullPolicy: Always
+        args:
         - clone
         - --single-branch
+        - --depth=1
         - --
         - https://github.com/ry-ops/cloudflare-mcp-server.git
         - /repo
-        image: alpine/git
-        imagePullPolicy: Always
-        name: git-clone
-        resources: {}
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
         volumeMounts:
-        - mountPath: /repo
-          name: repo
-      restartPolicy: Always
-      schedulerName: default-scheduler
-      securityContext: {}
+        - name: repo
+          mountPath: /repo
+      containers:
+      - name: app
+        image: python:3.11-slim
+        imagePullPolicy: IfNotPresent
+        workingDir: /app
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - |
+          set -e
+          echo "Installing dependencies..."
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 cloudflare>=2.0.0 pydantic>=2.0.0 python-dotenv>=1.0.0
+          
+          echo "Starting SSE+HTTP wrapper on port 3000..."
+          export MCP_COMMAND="python /app/src/mcp_server_cloudflare/server.py"
+          export PORT=3000
+          export MCP_SERVER_NAME="cloudflare-mcp"
+          
+          python /wrapper/mcp-http-wrapper.py
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: CLOUDFLARE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-mcp-secrets
+              key: api-token
+              optional: true
+        - name: CLOUDFLARE_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-mcp-secrets
+              key: account-id
+              optional: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: repo
+          mountPath: /app
+        - name: wrapper
+          mountPath: /wrapper
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
       volumes:
-      - emptyDir: {}
-        name: repo
+      - name: repo
+        emptyDir: {}
+      - name: wrapper
+        configMap:
+          name: mcp-http-wrapper
