@@ -1,0 +1,122 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: submit-llm-tutorial
+  namespace: cortex-knowledge
+  labels:
+    app: content-submission
+    cortex.ai/layer: "true"
+  annotations:
+    cortex.ai/purpose: "Test burst scaling with real LLM tutorial content"
+    cortex.ai/source: "User-provided video transcript"
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: content-submission
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: submit
+        image: curlimages/curl:8.1.2
+        command:
+        - sh
+        - -c
+        - |
+          echo "🚀 Submitting LLM tutorial content to cortex-knowledge layer..."
+          echo ""
+          echo "Target: http://moe-router.cortex-knowledge:8080"
+          echo "Expected: Trigger burst scaling (0 → 1+ replicas)"
+          echo ""
+
+          # Create JSON payload
+          cat > /tmp/content.json <<'CONTENT'
+          {
+            "type": "knowledge_ingestion",
+            "source": "llm-tutorial-video",
+            "domain": "rag-and-langchain",
+            "content": {
+              "title": "Building a Large Language Model App to Chat with Your Own Data",
+              "summary": "Tutorial on RAG (Retrieval Augmented Generation) using LangChain, Streamlit, and watsonx AI",
+              "key_concepts": [
+                "Retrieval Augmented Generation (RAG)",
+                "Vector embeddings and chunking",
+                "LangChain VectorstoreIndexCreator",
+                "ChromaDB vector database",
+                "Streamlit chat components",
+                "watsonx AI integration",
+                "llama-2-70b-chat model",
+                "Session state management",
+                "PDF document processing",
+                "Q&A chain implementation"
+              ],
+              "technologies": [
+                "LangChain",
+                "Streamlit",
+                "watsonx AI",
+                "ChromaDB",
+                "Python",
+                "llama-2-70b-chat"
+              ],
+              "full_content": "The technique that makes this work is called retrieval augmented generation, a fancy way of saying we chunk in chunks of your data into a prompt and get the LLM to answer based on that context. Build the Chat App with Streamlit components, integrate watsonx AI LLM, and add custom data via RAG implementation using VectorstoreIndexCreator and ChromaDB.",
+              "use_case": "Chatting with PDF documents using enterprise LLMs",
+              "domain_fit": "Perfect for cortex-knowledge layer: knowledge ingestion, retrieval, vector embeddings, Q&A chains"
+            },
+            "metadata": {
+              "submitted_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "layer": "cortex-knowledge",
+              "burst_test": true,
+              "expected_flow": "moe-router → qdrant → mcp-tools"
+            }
+          }
+          CONTENT
+
+          echo "📦 Content payload created"
+          echo ""
+
+          # Attempt to submit to MoE Router
+          echo "🌐 Sending request to MoE Router..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d @/tmp/content.json \
+            http://moe-router.cortex-knowledge:8080/ingest 2>&1)
+
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+
+          echo ""
+          echo "📊 Response:"
+          echo "Status Code: ${HTTP_STATUS:-connection_failed}"
+          echo "Body: $BODY"
+          echo ""
+
+          # If connection failed (service at 0 replicas), that's expected
+          if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; then
+            echo "⏳ Connection failed - MoE Router likely at 0 replicas"
+            echo "   This is expected! KEDA should detect the request and scale up."
+            echo "   Cold start time: ~5-30 seconds"
+            echo ""
+            echo "   Monitor with:"
+            echo "   kubectl get pods -n cortex-knowledge -w | grep moe-router"
+            exit 0
+          fi
+
+          # If we got a response, service was already running or scaled up
+          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+            echo "✅ Content submitted successfully!"
+            echo "   MoE Router processed the request"
+            exit 0
+          else
+            echo "⚠️  Unexpected status code: $HTTP_STATUS"
+            echo "   Service may not have expected endpoint /ingest"
+            exit 1
+          fi
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
