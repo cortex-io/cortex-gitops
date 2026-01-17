@@ -20,7 +20,7 @@ spec:
       memory: 8Gi
     maxLimitRequestRatio:
       cpu: 10
-      memory: 2
+      memory: 4
   - type: Pod
     max:
       cpu: 8
