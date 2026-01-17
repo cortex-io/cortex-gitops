@@ -1,0 +1,35 @@
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: moe-router
+  namespace: cortex-knowledge
+  labels:
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+  annotations:
+    cortex.ai/scaler-type: "http-interceptor"
+    cortex.ai/purpose: "True scale-from-zero using KEDA HTTP Add-on"
+spec:
+  # Target deployment to scale
+  scaleTargetRef:
+    name: moe-router
+    service: moe-router
+    port: 8080
+    deployment: moe-router
+
+  # Replica configuration
+  replicas:
+    min: 0  # Scale to zero when idle
+    max: 5  # Burst up to 5 replicas
+
+  # Scaling behavior
+  scalingMetric:
+    # requestRate: requests per second threshold
+    requestRate:
+      targetValue: 10
+      granularity: 1s
+      window: 1m
+
+  # Target pending requests (queue in interceptor)
+  targetPendingRequests: 100
