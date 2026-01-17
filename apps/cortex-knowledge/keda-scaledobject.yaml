@@ -1,0 +1,137 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: moe-router-scaler
+  namespace: cortex-knowledge
+  labels:
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+spec:
+  scaleTargetRef:
+    name: moe-router
+  minReplicaCount: 0  # Scale to zero when idle
+  maxReplicaCount: 5  # Burst up to 5 replicas under load
+  pollingInterval: 10  # Check every 10 seconds
+  cooldownPeriod: 120  # Wait 2 minutes before scaling down
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+      metricName: http_requests_per_second
+      query: |
+        sum(rate(http_requests_total{namespace="cortex-knowledge",service="moe-router"}[1m]))
+      threshold: "10"  # Scale up if >10 req/sec
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: mcp-server-scaler
+  namespace: cortex-knowledge
+  labels:
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+spec:
+  scaleTargetRef:
+    name: mcp-server
+  minReplicaCount: 0  # Scale to zero when idle
+  maxReplicaCount: 3  # Burst up to 3 replicas
+  pollingInterval: 10
+  cooldownPeriod: 120
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+      metricName: mcp_tool_invocations_per_second
+      query: |
+        sum(rate(mcp_tool_invocations_total{namespace="cortex-knowledge"}[1m]))
+      threshold: "5"  # Scale up if >5 tool calls/sec
+---
+# Qdrant scales based on MoE Router replicas (if MoE is up, Qdrant should be up)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: qdrant-scaler
+  namespace: cortex-knowledge
+  labels:
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: qdrant
+  minReplicaCount: 0
+  maxReplicaCount: 1  # Qdrant is stateful, keep at 1 when active
+  pollingInterval: 30
+  cooldownPeriod: 300  # Wait 5 minutes before scaling down (longer for stateful)
+  triggers:
+  - type: kubernetes-workload
+    metadata:
+      namespace: cortex-knowledge
+      workloadType: Deployment
+      workloadName: moe-router
+      value: "1"  # If MoE Router has ≥1 replica, scale Qdrant to 1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keda-burst-config
+  namespace: cortex-knowledge
+  labels:
+    cortex.ai/layer: "true"
+data:
+  README.md: |
+    # KEDA Burst Scaling Configuration
+
+    ## Overview
+    cortex-knowledge layer uses KEDA for scale-to-zero burst capability.
+
+    ## Triggers
+
+    ### MoE Router
+    - **Metric**: HTTP requests per second (Prometheus)
+    - **Threshold**: >10 req/sec → scale up
+    - **Min Replicas**: 0 (scale to zero when idle)
+    - **Max Replicas**: 5 (burst capacity)
+    - **Cooldown**: 2 minutes before scaling to zero
+
+    ### MCP Server
+    - **Metric**: Tool invocations per second (Prometheus)
+    - **Threshold**: >5 calls/sec → scale up
+    - **Min Replicas**: 0
+    - **Max Replicas**: 3
+    - **Cooldown**: 2 minutes
+
+    ### Qdrant
+    - **Metric**: MoE Router replica count (Kubernetes Workload)
+    - **Logic**: If MoE Router ≥1 replica → Qdrant = 1 replica
+    - **Min Replicas**: 0
+    - **Max Replicas**: 1 (stateful, don't scale horizontally)
+    - **Cooldown**: 5 minutes (longer for stateful service)
+
+    ## Cold Start Performance
+    - MoE Router: ~5-10 seconds
+    - MCP Server: ~5-10 seconds
+    - Qdrant: ~15-30 seconds (has to mount PVC and load indexes)
+
+    ## Monitoring
+    ```bash
+    # Check HPA created by KEDA
+    kubectl get hpa -n cortex-knowledge
+
+    # Check scaling activity
+    kubectl get scaledobject -n cortex-knowledge
+
+    # Watch scaling events
+    kubectl get events -n cortex-knowledge --sort-by='.lastTimestamp'
+
+    # Trigger scale-up manually
+    kubectl run -n cortex-knowledge test-load --image=curlimages/curl --rm -it -- \
+      sh -c 'while true; do curl http://moe-router:8080/health; sleep 0.1; done'
+    ```
+
+    ## Distillation Impact
+    Once this layer graduates to a specialized model, burst scaling becomes even more efficient:
+    - Replace MoE Router (routing logic) with single specialized model
+    - Keep Qdrant for RAG (but queries become more targeted)
+    - MCP Server patterns become embedded in model (fewer tool calls needed)

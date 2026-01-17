@@ -2,13 +2,15 @@ apiVersion: v1
 kind: Service
 metadata:
   name: qdrant
-  namespace: cortex-ai-infra
+  namespace: cortex-knowledge
   labels:
     app: qdrant
     app.kubernetes.io/part-of: cortex
-    cortex.ai/shared-service: "true"
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
 spec:
   type: ClusterIP
+  clusterIP: None
   ports:
   - port: 6333
     targetPort: 6333
@@ -25,15 +27,18 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: qdrant
-  namespace: cortex-ai-infra
+  namespace: cortex-knowledge
   labels:
     app: qdrant
-    component: vector-database
     app.kubernetes.io/part-of: cortex
-    cortex.ai/shared-service: "true"
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+  annotations:
+    cortex.ai/layer-domain: "knowledge-embeddings"
+    cortex.ai/data-purpose: "layer-specific-knowledge-vectors"
 spec:
   serviceName: qdrant
-  replicas: 1
+  replicas: 0  # Start at zero, scale with MoE Router
   selector:
     matchLabels:
       app: qdrant
@@ -41,47 +46,58 @@ spec:
     metadata:
       labels:
         app: qdrant
-        component: vector-database
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6333"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: qdrant
-        image: 10.43.170.72:5000/qdrant:v1.7.4
-        imagePullPolicy: IfNotPresent
+        image: qdrant/qdrant:latest
         ports:
         - containerPort: 6333
-          name: http
           protocol: TCP
         - containerPort: 6334
-          name: grpc
           protocol: TCP
         env:
         - name: QDRANT__SERVICE__HTTP_PORT
           value: "6333"
         - name: QDRANT__SERVICE__GRPC_PORT
           value: "6334"
+        - name: QDRANT__LOG_LEVEL
+          value: "INFO"
+        - name: QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS
+          value: "2"
         volumeMounts:
-        - name: qdrant-storage
+        - name: data
           mountPath: /qdrant/storage
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "50m"
+            memory: "256Mi"
+            cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "2Gi"
+            cpu: "1000m"
         livenessProbe:
           httpGet:
-            path: /
+            path: /healthz
             port: 6333
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /
+            path: /readyz
             port: 6333
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30
           periodSeconds: 5
-      volumes:
-      - name: qdrant-storage
-        emptyDir:
-          sizeLimit: 50Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        cortex.ai/layer: "true"
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: local-path
+      resources:
+        requests:
+          storage: 20Gi

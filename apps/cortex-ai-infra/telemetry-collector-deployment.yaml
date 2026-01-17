@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-collector
+  namespace: cortex-ai-infra
+  labels:
+    app: telemetry-collector
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/substrate: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 4317
+    targetPort: 4317
+    protocol: TCP
+    name: otlp-grpc
+  - port: 4318
+    targetPort: 4318
+    protocol: TCP
+    name: otlp-http
+  selector:
+    app: telemetry-collector
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-collector
+  namespace: cortex-ai-infra
+  labels:
+    app: telemetry-collector
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/substrate: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemetry-collector
+  template:
+    metadata:
+      labels:
+        app: telemetry-collector
+    spec:
+      containers:
+      - name: collector
+        image: otel/opentelemetry-collector-contrib:latest
+        ports:
+        - containerPort: 4317
+          protocol: TCP
+        - containerPort: 4318
+          protocol: TCP
+        env:
+        - name: TELEMETRY_PURPOSE
+          value: "layer-distillation-data"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otel-collector-config.yaml
+          subPath: otel-collector-config.yaml
+        - name: data
+          mountPath: /var/telemetry
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: telemetry-collector-config
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-collector-config
+  namespace: cortex-ai-infra
+  labels:
+    app: telemetry-collector
+    cortex.ai/substrate: "true"
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+
+      # Add layer metadata to all traces
+      attributes:
+        actions:
+          - key: cortex.substrate
+            value: "true"
+            action: insert
+
+    exporters:
+      # Store locally for distillation
+      file:
+        path: /var/telemetry/traces.json
+        rotation:
+          max_megabytes: 100
+          max_backups: 10
+
+      # Also export to stdout for debugging
+      logging:
+        loglevel: info
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, attributes]
+          exporters: [file, logging]

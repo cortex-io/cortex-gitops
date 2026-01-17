@@ -2,11 +2,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: moe-router
-  namespace: cortex-ai-infra
+  namespace: cortex-knowledge
   labels:
     app: moe-router
     app.kubernetes.io/part-of: cortex
-    cortex.ai/shared-service: "true"
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
 spec:
   type: ClusterIP
   ports:
@@ -21,14 +22,18 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: moe-router
-  namespace: cortex-ai-infra
+  namespace: cortex-knowledge
   labels:
     app: moe-router
     component: moe-router
     app.kubernetes.io/part-of: cortex
-    cortex.ai/shared-service: "true"
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+  annotations:
+    cortex.ai/layer-domain: "knowledge-ingestion-retrieval-graph"
+    cortex.ai/distillation-target: "knowledge-specialist-model"
 spec:
-  replicas: 1
+  replicas: 0  # Start at zero, KEDA will scale up
   selector:
     matchLabels:
       app: moe-router
@@ -37,6 +42,10 @@ spec:
       labels:
         app: moe-router
         component: moe-router
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: router
@@ -46,30 +55,36 @@ spec:
         - containerPort: 8080
           protocol: TCP
         env:
+        - name: LAYER_NAME
+          value: "cortex-knowledge"
+        - name: LAYER_DOMAIN
+          value: "knowledge-ingestion-retrieval-graph"
         - name: REDIS_HOST
           value: "redis-queue.cortex.svc.cluster.local"
         - name: REDIS_PORT
           value: "6379"
         - name: LLMD_ENDPOINT
           value: "http://llmd-service.cortex.svc.cluster.local:8000"
+        - name: QDRANT_ENDPOINT
+          value: "http://qdrant.cortex-knowledge:6333"
+        - name: TELEMETRY_ENDPOINT
+          value: "telemetry-collector.cortex-ai-infra.svc.cluster.local:4317"
+        - name: TELEMETRY_ENABLED
+          value: "true"
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
               name: anthropic-api-key
               key: api-key
               optional: true
-        - name: EXPERT_ARCHITECTURE_MODEL
+        - name: EXPERT_KNOWLEDGE_MODEL
           value: "claude-opus-4-5"
-        - name: EXPERT_INTEGRATION_MODEL
+        - name: EXPERT_RESEARCH_MODEL
           value: "claude-sonnet-4-5"
-        - name: EXPERT_SECURITY_MODEL
-          value: "claude-opus-4-5"
-        - name: EXPERT_DATABASE_MODEL
+        - name: EXPERT_EXTRACTION_MODEL
           value: "claude-sonnet-4-5"
-        - name: EXPERT_NETWORKING_MODEL
+        - name: EXPERT_GRAPH_MODEL
           value: "claude-sonnet-4-5"
-        - name: EXPERT_MONITORING_MODEL
-          value: "claude-haiku-4"
         - name: LOG_LEVEL
           value: "INFO"
         resources:
