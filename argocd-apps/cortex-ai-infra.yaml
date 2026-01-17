@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cortex-ai-infra
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: cortex
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ry-ops/cortex-gitops.git
+    targetRevision: main
+    path: apps/cortex-ai-infra
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cortex-ai-infra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
