@@ -38,7 +38,7 @@ metadata:
     cortex.ai/data-purpose: "layer-specific-knowledge-vectors"
 spec:
   serviceName: qdrant
-  replicas: 1  # TODO: Change to 0 once KEDA is installed
+  replicas: 0  # KEDA installed - scales with MoE Router activity
   selector:
     matchLabels:
       app: qdrant
