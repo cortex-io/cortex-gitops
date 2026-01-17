@@ -1,0 +1,35 @@
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: mcp-server-http
+  namespace: cortex-knowledge
+  labels:
+    app: mcp-server
+    cortex.ai/mcp-server: "true"
+  annotations:
+    cortex.ai/purpose: "MCP server with scale-from-one (always available)"
+spec:
+  # Target deployment to scale
+  scaleTargetRef:
+    name: mcp-server
+    service: mcp-server
+    port: 3000
+    deployment: mcp-server
+
+  # Replica configuration - min 1 to keep MCP server always available
+  replicas:
+    min: 1  # Keep at least 1 replica running for MCP availability
+    max: 3  # Burst up to 3 replicas under load
+
+  # Scale down after period of inactivity
+  scaledownPeriod: 120
+
+  # Scaling behavior
+  scalingMetric:
+    requestRate:
+      targetValue: 10
+      granularity: 1s
+      window: 1m
+
+  # Target pending requests (queue in interceptor)
+  targetPendingRequests: 50
