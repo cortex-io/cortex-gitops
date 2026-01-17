@@ -47,16 +47,16 @@ spec:
         - -c
         args:
         - |
-          set -e
+          set -ex
           echo "Installing dependencies..."
-          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 cloudflare>=2.0.0 pydantic>=2.0.0 python-dotenv>=1.0.0
-          
+          pip install --no-cache-dir mcp httpx cloudflare pydantic python-dotenv 2>&1 | tail -20
+
           echo "Starting SSE+HTTP wrapper on port 3000..."
           export MCP_COMMAND="python /app/src/mcp_server_cloudflare/server.py"
           export PORT=3000
           export MCP_SERVER_NAME="cloudflare-mcp"
-          
-          python /wrapper/mcp-http-wrapper.py
+
+          python -u /wrapper/mcp-http-wrapper.py
         ports:
         - name: http
           containerPort: 3000
@@ -77,10 +77,10 @@ spec:
         resources:
           requests:
             cpu: 50m
-            memory: 64Mi
+            memory: 256Mi
           limits:
-            cpu: 200m
-            memory: 128Mi
+            cpu: 300m
+            memory: 512Mi
         livenessProbe:
           httpGet:
             path: /health
