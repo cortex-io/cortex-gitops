@@ -62,7 +62,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "ps aux | grep -v grep | grep -q 'tail -f'"
+            - "test -e /dev/null"
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 3
@@ -73,7 +73,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "ps aux | grep -v grep | grep -q 'tail -f'"
+            - "test -e /dev/null"
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
