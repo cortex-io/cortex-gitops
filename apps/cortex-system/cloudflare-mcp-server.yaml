@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflare-mcp-server
+  namespace: cortex-system
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: cloudflare-mcp-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflare-mcp-server
+  namespace: cortex-system
+  labels:
+    app: cloudflare-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflare-mcp-server
+  template:
+    metadata:
+      labels:
+        app: cloudflare-mcp-server
+    spec:
+      initContainers:
+      - name: git-clone
+        image: alpine/git
+        args:
+        - clone
+        - --single-branch
+        - --depth=1
+        - https://github.com/ry-ops/cloudflare-mcp-server.git
+        - /repo
+        volumeMounts:
+        - name: repo
+          mountPath: /repo
+      containers:
+      - name: app
+        image: python:3.11-slim
+        workingDir: /app
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "Installing cloudflare-mcp-server..."
+          pip install --no-cache-dir -e /app
+          echo "Cloudflare MCP Server ready (stdio mode)"
+          tail -f /dev/null
+        env:
+        - name: CLOUDFLARE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-mcp-secrets
+              key: api-token
+              optional: true
+        - name: CLOUDFLARE_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-mcp-secrets
+              key: account-id
+              optional: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 200Mi
+          limits:
+            cpu: 200m
+            memory: 400Mi
+        volumeMounts:
+        - name: repo
+          mountPath: /app
+      volumes:
+      - name: repo
+        emptyDir: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cloudflare-mcp-ingress
+  namespace: cortex-system
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-dns
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: cloudflare-mcp.ry-ops.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cloudflare-mcp-server
+            port:
+              number: 3000
+  tls:
+  - hosts:
+    - cloudflare-mcp.ry-ops.dev
+    secretName: cloudflare-mcp-tls
