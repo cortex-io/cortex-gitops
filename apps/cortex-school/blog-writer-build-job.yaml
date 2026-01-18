@@ -474,16 +474,14 @@ data:
             escaped_description = improvement.get('description', title)[:200].replace("'", "''")
 
             # Create frontmatter
-            frontmatter = f"""---
-title: {escaped_title}
-date: {datetime.utcnow().isoformat()}Z
-type: {changelog_type}
-category: {category}
-relevance: {improvement.get('relevance', 0)}
----
-
-{escaped_description}
-"""
+            frontmatter = "---\\n"
+            frontmatter += f"title: {escaped_title}\\n"
+            frontmatter += f"date: {datetime.utcnow().isoformat()}Z\\n"
+            frontmatter += f"type: {changelog_type}\\n"
+            frontmatter += f"category: {category}\\n"
+            frontmatter += f"relevance: {improvement.get('relevance', 0)}\\n"
+            frontmatter += "---\\n\\n"
+            frontmatter += f"{escaped_description}\\n"
 
             # Write changelog entry
             changelog_path = f"{BLOG_REPO_PATH}/src/content/changelog/{full_slug}.md"
