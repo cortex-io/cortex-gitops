@@ -47,12 +47,16 @@ spec:
         - -c
         args:
         - |
-          set -e
-          echo "Installing MCP dependencies..."
-          pip install --no-cache-dir mcp httpx cloudflare pydantic python-dotenv
+          set -ex
+          echo "Installing dependencies..."
+          pip install --no-cache-dir mcp httpx cloudflare pydantic python-dotenv 2>&1 | tail -20
 
-          echo "MCP server ready for stdio connections"
-          tail -f /dev/null
+          echo "Starting SSE+HTTP wrapper on port 3000..."
+          export MCP_COMMAND="python /app/src/mcp_server_cloudflare/server.py"
+          export PORT=3000
+          export MCP_SERVER_NAME="cloudflare-mcp"
+
+          python -u /wrapper/mcp-http-wrapper.py
         ports:
         - name: http
           containerPort: 3000

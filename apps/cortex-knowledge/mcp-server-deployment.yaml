@@ -7,6 +7,7 @@ metadata:
     app: mcp-server
     app.kubernetes.io/part-of: cortex
     cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
 spec:
   type: ClusterIP
   ports:
@@ -26,10 +27,12 @@ metadata:
     app: mcp-server
     app.kubernetes.io/part-of: cortex
     cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
   annotations:
     cortex.ai/layer-domain: "knowledge-tools"
+    cortex.ai/distillation-target: "tool-chain-patterns"
 spec:
-  replicas: 1
+  replicas: 0  # KEDA installed - scales based on tool invocations
   selector:
     matchLabels:
       app: mcp-server
@@ -45,20 +48,18 @@ spec:
       serviceAccountName: mcp-knowledge-tools
       containers:
       - name: server
-        image: node:18-alpine
+        image: 10.43.170.72:5000/cortex-mcp-server:latest
         imagePullPolicy: IfNotPresent
-        workingDir: /app
-        command: ["node", "/app/server.js"]
         ports:
         - containerPort: 3000
           protocol: TCP
         env:
-        - name: PORT
-          value: "3000"
         - name: LAYER_NAME
           value: "cortex-knowledge"
         - name: LAYER_DOMAIN
           value: "knowledge-tools"
+        - name: MCP_TOOLS_ENABLED
+          value: "knowledge-graph,elasticsearch,mongodb,phoenix,improvement-detector"
         - name: KNOWLEDGE_GRAPH_API
           value: "http://knowledge-graph-api.cortex-knowledge:8080"
         - name: ELASTICSEARCH_HOST
@@ -67,6 +68,10 @@ spec:
           value: "knowledge-mongodb.cortex-knowledge:27017"
         - name: PHOENIX_HOST
           value: "phoenix.cortex-knowledge:4000"
+        - name: TELEMETRY_ENDPOINT
+          value: "telemetry-collector.cortex-ai-infra.svc.cluster.local:4317"
+        - name: TELEMETRY_ENABLED
+          value: "true"
         - name: LOG_LEVEL
           value: "INFO"
         resources:
@@ -88,13 +93,6 @@ spec:
             port: 3000
           initialDelaySeconds: 10
           periodSeconds: 5
-        volumeMounts:
-        - name: server-code
-          mountPath: /app
-      volumes:
-      - name: server-code
-        configMap:
-          name: knowledge-mcp-server-code
 ---
 apiVersion: v1
 kind: ServiceAccount
