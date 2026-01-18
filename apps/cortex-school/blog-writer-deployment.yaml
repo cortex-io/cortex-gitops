@@ -66,6 +66,23 @@ spec:
             secretKeyRef:
               name: anthropic-api-key
               key: key
+        - name: CLOUDFLARE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-api
+              key: token
+        - name: CLOUDFLARE_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-api
+              key: account-id
+        - name: CLOUDFLARE_PROJECT_NAME
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-api
+              key: project-name
+        - name: CLOUDFLARE_VERIFY_DEPLOYMENT
+          value: "true"
         volumeMounts:
         - name: blog-repo
           mountPath: /blog

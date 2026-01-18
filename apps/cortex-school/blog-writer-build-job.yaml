@@ -36,6 +36,10 @@ data:
     GITHUB_USER_NAME = os.getenv('GITHUB_USER_NAME', 'Cortex')
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '300'))  # 5 minutes
+    CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
+    CLOUDFLARE_ACCOUNT_ID = os.getenv('CLOUDFLARE_ACCOUNT_ID')
+    CLOUDFLARE_PROJECT_NAME = os.getenv('CLOUDFLARE_PROJECT_NAME', 'blog')
+    CLOUDFLARE_VERIFY_DEPLOYMENT = os.getenv('CLOUDFLARE_VERIFY_DEPLOYMENT', 'true').lower() == 'true'
 
     # Redis connection
     redis_client = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -327,6 +331,76 @@ data:
             logger.error(f"Error pushing to GitHub: {e}")
             return False
 
+    def verify_cloudflare_deployment(post_slug, max_wait=180):
+        """Verify Cloudflare Pages deployment after git push"""
+        if not CLOUDFLARE_VERIFY_DEPLOYMENT:
+            logger.info("Cloudflare verification disabled")
+            return True
+
+        if not CLOUDFLARE_API_TOKEN or not CLOUDFLARE_ACCOUNT_ID:
+            logger.warning("Cloudflare API credentials not configured, skipping verification")
+            return True
+
+        try:
+            import requests
+
+            # Wait for GitHub webhook to trigger Cloudflare build
+            logger.info(f"Waiting 30 seconds for Cloudflare Pages webhook to trigger...")
+            time.sleep(30)
+
+            # Poll for deployment status
+            url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/pages/projects/{CLOUDFLARE_PROJECT_NAME}/deployments"
+            headers = {
+                'Authorization': f'Bearer {CLOUDFLARE_API_TOKEN}',
+                'Content-Type': 'application/json'
+            }
+
+            start_time = time.time()
+            while time.time() - start_time < max_wait:
+                response = requests.get(url, headers=headers, params={'per_page': 1})
+
+                if response.status_code != 200:
+                    logger.error(f"Cloudflare API error: {response.status_code} - {response.text}")
+                    return False
+
+                data = response.json()
+                if not data.get('result'):
+                    logger.warning("No deployments found")
+                    time.sleep(10)
+                    continue
+
+                deployment = data['result'][0]
+                latest_stage = deployment.get('latest_stage', {})
+                status = latest_stage.get('status')
+
+                logger.info(f"Deployment status: {status}")
+
+                if status == 'success':
+                    logger.info(f"✓ Cloudflare Pages deployment successful for {post_slug}")
+                    logger.info(f"  URL: {deployment.get('url')}")
+                    return True
+                elif status == 'failure':
+                    logger.error(f"✗ Cloudflare Pages deployment failed for {post_slug}")
+                    logger.error(f"  Deployment ID: {deployment.get('id')}")
+                    logger.error(f"  URL: {deployment.get('url')}")
+                    logger.error(f"  View logs: https://dash.cloudflare.com/")
+                    return False
+                elif status in ['active', 'building', 'deploying']:
+                    # Still building
+                    time.sleep(10)
+                    continue
+                else:
+                    logger.warning(f"Unknown deployment status: {status}")
+                    time.sleep(10)
+                    continue
+
+            logger.warning(f"Cloudflare deployment verification timed out after {max_wait}s")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error verifying Cloudflare deployment: {e}")
+            return False
+
     @app.route('/health')
     def health():
         """Health check endpoint"""
@@ -381,10 +455,20 @@ data:
 
                 # Commit and push to GitHub
                 if commit_and_push_blog_post(post_info):
+                    # Verify Cloudflare deployment
+                    deployment_success = verify_cloudflare_deployment(post_info['slug'])
+
                     # Mark as blogged
                     improvement['blogged'] = True
                     improvement['blog_slug'] = post_info['slug']
                     improvement['blogged_at'] = datetime.utcnow().isoformat()
+                    improvement['cloudflare_verified'] = deployment_success
+                    if deployment_success:
+                        improvement['deployment_status'] = 'success'
+                    else:
+                        improvement['deployment_status'] = 'failed'
+                        logger.warning(f"Blog post pushed but Cloudflare deployment verification failed: {post_info['slug']}")
+
                     redis_client.set(improvement_key, json.dumps(improvement))
                     logger.info(f"Successfully blogged: {post_info['slug']}")
                 else:
