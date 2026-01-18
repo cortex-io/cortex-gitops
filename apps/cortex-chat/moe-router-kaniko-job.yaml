@@ -17,3 +17,10 @@ spec:
         - "--destination=10.43.170.72:5000/moe-router:latest"
         - "--insecure"
         - "--skip-tls-verify"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 1Gi
