@@ -305,8 +305,9 @@ data:
                 remote_url = f"https://{GITHUB_TOKEN}@github.com/ry-ops/blog.git"
                 subprocess.run(['git', 'remote', 'set-url', 'origin', remote_url], env=git_env, check=True)
 
-            # Pull latest
-            subprocess.run(['git', 'pull', 'origin', 'main'], env=git_env, check=True)
+            # Reset any local changes and pull latest
+            subprocess.run(['git', 'fetch', 'origin'], env=git_env, check=True)
+            subprocess.run(['git', 'reset', '--hard', 'origin/main'], env=git_env, check=True)
 
             # Add files
             subprocess.run(['git', 'add', post_info['post_path']], env=git_env, check=True)
