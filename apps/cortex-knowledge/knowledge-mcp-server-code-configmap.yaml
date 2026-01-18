@@ -1,0 +1,140 @@
+apiVersion: v1
+data:
+  server.js: "#!/usr/bin/env node\n/**\n * Knowledge MCP Server with SSE Support\n
+    * Provides MCP tools for knowledge layer operations\n */\nconst http = require('http');\nconst
+    crypto = require('crypto');\n\nconst PORT = parseInt(process.env.PORT || '3000');\nconst
+    SERVER_NAME = 'knowledge-mcp-server';\n\n// Backend service URLs from environment\nconst
+    KNOWLEDGE_GRAPH_API = process.env.KNOWLEDGE_GRAPH_API || 'http://knowledge-graph-api:8080';\nconst
+    ELASTICSEARCH_HOST = process.env.ELASTICSEARCH_HOST || 'knowledge-elasticsearch:9200';\nconst
+    MONGODB_HOST = process.env.MONGODB_HOST || 'knowledge-mongodb:27017';\nconst PHOENIX_HOST
+    = process.env.PHOENIX_HOST || 'phoenix:4000';\n\n// MCP Tools definition\nconst
+    MCP_TOOLS = [\n  {\n    name: 'knowledge_search',\n    description: 'Search the
+    knowledge graph for entities and relationships',\n    inputSchema: {\n      type:
+    'object',\n      properties: {\n        query: { type: 'string', description:
+    'Search query' },\n        limit: { type: 'number', description: 'Max results',
+    default: 10 }\n      },\n      required: ['query']\n    }\n  },\n  {\n    name:
+    'knowledge_get_entity',\n    description: 'Get details of a specific knowledge
+    entity',\n    inputSchema: {\n      type: 'object',\n      properties: {\n        entityId:
+    { type: 'string', description: 'Entity ID' }\n      },\n      required: ['entityId']\n
+    \   }\n  },\n  {\n    name: 'elasticsearch_search',\n    description: 'Search
+    documents in Elasticsearch',\n    inputSchema: {\n      type: 'object',\n      properties:
+    {\n        index: { type: 'string', description: 'Index name' },\n        query:
+    { type: 'string', description: 'Search query' },\n        size: { type: 'number',
+    description: 'Max results', default: 10 }\n      },\n      required: ['query']\n
+    \   }\n  },\n  {\n    name: 'mongodb_find',\n    description: 'Query MongoDB collections',\n
+    \   inputSchema: {\n      type: 'object',\n      properties: {\n        collection:
+    { type: 'string', description: 'Collection name' },\n        filter: { type: 'object',
+    description: 'Query filter' },\n        limit: { type: 'number', description:
+    'Max results', default: 10 }\n      },\n      required: ['collection']\n    }\n
+    \ },\n  {\n    name: 'phoenix_traces',\n    description: 'Get recent traces from
+    Phoenix observability',\n    inputSchema: {\n      type: 'object',\n      properties:
+    {\n        limit: { type: 'number', description: 'Max traces', default: 10 },\n
+    \       project: { type: 'string', description: 'Project name' }\n      }\n    }\n
+    \ }\n];\n\n// Simple HTTP client\nasync function httpRequest(url, options = {})
+    {\n  return new Promise((resolve, reject) => {\n    const parsedUrl = new URL(url);\n
+    \   const reqOptions = {\n      hostname: parsedUrl.hostname,\n      port: parsedUrl.port
+    || 80,\n      path: parsedUrl.pathname + parsedUrl.search,\n      method: options.method
+    || 'GET',\n      headers: options.headers || {},\n      timeout: 30000\n    };\n\n
+    \   const req = http.request(reqOptions, (res) => {\n      let data = '';\n      res.on('data',
+    chunk => data += chunk);\n      res.on('end', () => {\n        try {\n          resolve({
+    status: res.statusCode, data: JSON.parse(data) });\n        } catch {\n          resolve({
+    status: res.statusCode, data });\n        }\n      });\n    });\n\n    req.on('error',
+    reject);\n    req.on('timeout', () => reject(new Error('Request timeout')));\n
+    \   \n    if (options.body) {\n      req.write(JSON.stringify(options.body));\n
+    \   }\n    req.end();\n  });\n}\n\n// Tool execution\nasync function executeTool(name,
+    args) {\n  console.log('[Tool]', name, JSON.stringify(args));\n  \n  try {\n    switch
+    (name) {\n      case 'knowledge_search': {\n        const res = await httpRequest(\n
+    \         KNOWLEDGE_GRAPH_API + '/search?q=' + encodeURIComponent(args.query)
+    + '&limit=' + (args.limit || 10)\n        );\n        return res.data;\n      }\n
+    \     \n      case 'knowledge_get_entity': {\n        const res = await httpRequest(KNOWLEDGE_GRAPH_API
+    + '/entities/' + args.entityId);\n        return res.data;\n      }\n      \n
+    \     case 'elasticsearch_search': {\n        const index = args.index || '_all';\n
+    \       const res = await httpRequest(\n          'http://' + ELASTICSEARCH_HOST
+    + '/' + index + '/_search',\n          {\n            method: 'POST',\n            headers:
+    { 'Content-Type': 'application/json' },\n            body: {\n              query:
+    { query_string: { query: args.query } },\n              size: args.size || 10\n
+    \           }\n          }\n        );\n        return res.data;\n      }\n      \n
+    \     case 'mongodb_find': {\n        // MongoDB HTTP interface (if available)
+    or return info\n        return {\n          message: 'MongoDB query would be executed',\n
+    \         collection: args.collection,\n          filter: args.filter || {},\n
+    \         limit: args.limit || 10,\n          host: MONGODB_HOST\n        };\n
+    \     }\n      \n      case 'phoenix_traces': {\n        const res = await httpRequest(\n
+    \         'http://' + PHOENIX_HOST + '/api/traces?limit=' + (args.limit || 10)\n
+    \       );\n        return res.data;\n      }\n      \n      default:\n        throw
+    new Error('Unknown tool: ' + name);\n    }\n  } catch (error) {\n    return {
+    error: error.message };\n  }\n}\n\n// SSE Session management\nconst sessions =
+    new Map();\n\nclass SSESession {\n  constructor(id, res) {\n    this.id = id;\n
+    \   this.res = res;\n  }\n  \n  send(data) {\n    this.res.write('data: ' + JSON.stringify(data)
+    + '\\n\\n');\n  }\n  \n  sendEvent(event, data) {\n    this.res.write('event:
+    ' + event + '\\n');\n    this.res.write('data: ' + data + '\\n\\n');\n  }\n}\n\n//
+    Request handler\nasync function handleRequest(req, res) {\n  const url = new URL(req.url,
+    'http://localhost');\n  const path = url.pathname;\n  \n  console.log('[API]',
+    req.method, path);\n  \n  // CORS headers\n  res.setHeader('Access-Control-Allow-Origin',
+    '*');\n  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');\n
+    \ res.setHeader('Access-Control-Allow-Headers', 'Content-Type');\n  \n  if (req.method
+    === 'OPTIONS') {\n    res.writeHead(204);\n    res.end();\n    return;\n  }\n
+    \ \n  // SSE endpoint\n  if (req.method === 'GET' && path === '/sse') {\n    const
+    sessionId = crypto.randomUUID();\n    console.log('[SSE] New connection:', sessionId);\n
+    \   \n    res.writeHead(200, {\n      'Content-Type': 'text/event-stream',\n      'Cache-Control':
+    'no-cache',\n      'Connection': 'keep-alive',\n      'X-Accel-Buffering': 'no'\n
+    \   });\n    \n    // Send endpoint event\n    res.write('event: endpoint\\n');\n
+    \   res.write('data: /message?sessionId=' + sessionId + '\\n\\n');\n    \n    const
+    session = new SSESession(sessionId, res);\n    sessions.set(sessionId, session);\n
+    \   \n    // Heartbeat\n    const heartbeat = setInterval(() => res.write(': keepalive\\n\\n'),
+    25000);\n    \n    req.on('close', () => {\n      console.log('[SSE] Closed:',
+    sessionId);\n      clearInterval(heartbeat);\n      sessions.delete(sessionId);\n
+    \   });\n    return;\n  }\n  \n  // SSE message endpoint\n  if (req.method ===
+    'POST' && path === '/message') {\n    const sessionId = url.searchParams.get('sessionId');\n
+    \   const session = sessions.get(sessionId);\n    \n    if (!session) {\n      res.writeHead(404,
+    { 'Content-Type': 'application/json' });\n      res.end(JSON.stringify({ error:
+    'Session not found' }));\n      return;\n    }\n    \n    let body = '';\n    for
+    await (const chunk of req) body += chunk;\n    \n    try {\n      const request
+    = JSON.parse(body);\n      const { id, method, params } = request;\n      \n      console.log('[SSE]',
+    method, 'id:', id);\n      \n      let response;\n      switch (method) {\n        case
+    'initialize':\n          response = {\n            jsonrpc: '2.0', id,\n            result:
+    {\n              protocolVersion: '2024-11-05',\n              serverInfo: { name:
+    SERVER_NAME, version: '1.0.0' },\n              capabilities: { tools: { listChanged:
+    false } }\n            }\n          };\n          break;\n          \n        case
+    'notifications/initialized':\n          break;\n          \n        case 'tools/list':\n
+    \         response = { jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } };\n          break;\n
+    \         \n        case 'tools/call':\n          try {\n            const result
+    = await executeTool(params.name, params.arguments || {});\n            response
+    = {\n              jsonrpc: '2.0', id,\n              result: { content: [{ type:
+    'text', text: JSON.stringify(result, null, 2) }] }\n            };\n          }
+    catch (e) {\n            response = { jsonrpc: '2.0', id, error: { code: -32603,
+    message: e.message } };\n          }\n          break;\n          \n        case
+    'ping':\n          response = { jsonrpc: '2.0', id, result: {} };\n          break;\n
+    \         \n        default:\n          response = { jsonrpc: '2.0', id, error:
+    { code: -32601, message: 'Method not found' } };\n      }\n      \n      if (response)
+    session.send(response);\n      \n      res.writeHead(202, { 'Content-Type': 'application/json'
+    });\n      res.end(JSON.stringify({ status: 'accepted' }));\n      \n    } catch
+    (e) {\n      res.writeHead(400, { 'Content-Type': 'application/json' });\n      res.end(JSON.stringify({
+    error: e.message }));\n    }\n    return;\n  }\n  \n  // Health check\n  if (path
+    === '/health') {\n    res.writeHead(200, { 'Content-Type': 'application/json'
+    });\n    res.end(JSON.stringify({\n      status: 'healthy',\n      service: SERVER_NAME,\n
+    \     version: '1.0.0',\n      transport: 'sse',\n      tools: MCP_TOOLS.length,\n
+    \     sessions: sessions.size\n    }));\n    return;\n  }\n  \n  // Metrics\n
+    \ if (path === '/metrics') {\n    res.writeHead(200, { 'Content-Type': 'text/plain'
+    });\n    res.end([\n      '# HELP mcp_sessions Active SSE sessions',\n      '#
+    TYPE mcp_sessions gauge',\n      'mcp_sessions ' + sessions.size,\n      '# HELP
+    mcp_tools_available Available MCP tools',\n      '# TYPE mcp_tools_available gauge',\n
+    \     'mcp_tools_available ' + MCP_TOOLS.length\n    ].join('\\n'));\n    return;\n
+    \ }\n  \n  // List tools (HTTP)\n  if (path === '/list-tools') {\n    res.writeHead(200,
+    { 'Content-Type': 'application/json' });\n    res.end(JSON.stringify({ tools:
+    MCP_TOOLS }));\n    return;\n  }\n  \n  // 404\n  res.writeHead(404, { 'Content-Type':
+    'application/json' });\n  res.end(JSON.stringify({\n    error: 'Not found',\n
+    \   endpoints: ['GET /sse', 'POST /message', 'GET /health', 'GET /metrics', 'GET
+    /list-tools']\n  }));\n}\n\n// Start server\nconst server = http.createServer(handleRequest);\nserver.listen(PORT,
+    '0.0.0.0', () => {\n  console.log('='.repeat(50));\n  console.log('Knowledge MCP
+    Server v1.0.0');\n  console.log('Port:', PORT);\n  console.log('Transport: SSE');\n
+    \ console.log('Tools:', MCP_TOOLS.map(t => t.name).join(', '));\n  console.log('='.repeat(50));\n});\n"
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"server.js":"#!/usr/bin/env node\n/**\n * Knowledge MCP Server with SSE Support\n * Provides MCP tools for knowledge layer operations\n */\nconst http = require('http');\nconst crypto = require('crypto');\n\nconst PORT = parseInt(process.env.PORT || '3000');\nconst SERVER_NAME = 'knowledge-mcp-server';\n\n// Backend service URLs from environment\nconst KNOWLEDGE_GRAPH_API = process.env.KNOWLEDGE_GRAPH_API || 'http://knowledge-graph-api:8080';\nconst ELASTICSEARCH_HOST = process.env.ELASTICSEARCH_HOST || 'knowledge-elasticsearch:9200';\nconst MONGODB_HOST = process.env.MONGODB_HOST || 'knowledge-mongodb:27017';\nconst PHOENIX_HOST = process.env.PHOENIX_HOST || 'phoenix:4000';\n\n// MCP Tools definition\nconst MCP_TOOLS = [\n  {\n    name: 'knowledge_search',\n    description: 'Search the knowledge graph for entities and relationships',\n    inputSchema: {\n      type: 'object',\n      properties: {\n        query: { type: 'string', description: 'Search query' },\n        limit: { type: 'number', description: 'Max results', default: 10 }\n      },\n      required: ['query']\n    }\n  },\n  {\n    name: 'knowledge_get_entity',\n    description: 'Get details of a specific knowledge entity',\n    inputSchema: {\n      type: 'object',\n      properties: {\n        entityId: { type: 'string', description: 'Entity ID' }\n      },\n      required: ['entityId']\n    }\n  },\n  {\n    name: 'elasticsearch_search',\n    description: 'Search documents in Elasticsearch',\n    inputSchema: {\n      type: 'object',\n      properties: {\n        index: { type: 'string', description: 'Index name' },\n        query: { type: 'string', description: 'Search query' },\n        size: { type: 'number', description: 'Max results', default: 10 }\n      },\n      required: ['query']\n    }\n  },\n  {\n    name: 'mongodb_find',\n    description: 'Query MongoDB collections',\n    inputSchema: {\n      type: 'object',\n      properties: {\n        collection: { type: 'string', description: 'Collection name' },\n        filter: { type: 'object', description: 'Query filter' },\n        limit: { type: 'number', description: 'Max results', default: 10 }\n      },\n      required: ['collection']\n    }\n  },\n  {\n    name: 'phoenix_traces',\n    description: 'Get recent traces from Phoenix observability',\n    inputSchema: {\n      type: 'object',\n      properties: {\n        limit: { type: 'number', description: 'Max traces', default: 10 },\n        project: { type: 'string', description: 'Project name' }\n      }\n    }\n  }\n];\n\n// Simple HTTP client\nasync function httpRequest(url, options = {}) {\n  return new Promise((resolve, reject) =\u003e {\n    const parsedUrl = new URL(url);\n    const reqOptions = {\n      hostname: parsedUrl.hostname,\n      port: parsedUrl.port || 80,\n      path: parsedUrl.pathname + parsedUrl.search,\n      method: options.method || 'GET',\n      headers: options.headers || {},\n      timeout: 30000\n    };\n\n    const req = http.request(reqOptions, (res) =\u003e {\n      let data = '';\n      res.on('data', chunk =\u003e data += chunk);\n      res.on('end', () =\u003e {\n        try {\n          resolve({ status: res.statusCode, data: JSON.parse(data) });\n        } catch {\n          resolve({ status: res.statusCode, data });\n        }\n      });\n    });\n\n    req.on('error', reject);\n    req.on('timeout', () =\u003e reject(new Error('Request timeout')));\n    \n    if (options.body) {\n      req.write(JSON.stringify(options.body));\n    }\n    req.end();\n  });\n}\n\n// Tool execution\nasync function executeTool(name, args) {\n  console.log('[Tool]', name, JSON.stringify(args));\n  \n  try {\n    switch (name) {\n      case 'knowledge_search': {\n        const res = await httpRequest(\n          KNOWLEDGE_GRAPH_API + '/search?q=' + encodeURIComponent(args.query) + '\u0026limit=' + (args.limit || 10)\n        );\n        return res.data;\n      }\n      \n      case 'knowledge_get_entity': {\n        const res = await httpRequest(KNOWLEDGE_GRAPH_API + '/entities/' + args.entityId);\n        return res.data;\n      }\n      \n      case 'elasticsearch_search': {\n        const index = args.index || '_all';\n        const res = await httpRequest(\n          'http://' + ELASTICSEARCH_HOST + '/' + index + '/_search',\n          {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json' },\n            body: {\n              query: { query_string: { query: args.query } },\n              size: args.size || 10\n            }\n          }\n        );\n        return res.data;\n      }\n      \n      case 'mongodb_find': {\n        // MongoDB HTTP interface (if available) or return info\n        return {\n          message: 'MongoDB query would be executed',\n          collection: args.collection,\n          filter: args.filter || {},\n          limit: args.limit || 10,\n          host: MONGODB_HOST\n        };\n      }\n      \n      case 'phoenix_traces': {\n        const res = await httpRequest(\n          'http://' + PHOENIX_HOST + '/api/traces?limit=' + (args.limit || 10)\n        );\n        return res.data;\n      }\n      \n      default:\n        throw new Error('Unknown tool: ' + name);\n    }\n  } catch (error) {\n    return { error: error.message };\n  }\n}\n\n// SSE Session management\nconst sessions = new Map();\n\nclass SSESession {\n  constructor(id, res) {\n    this.id = id;\n    this.res = res;\n  }\n  \n  send(data) {\n    this.res.write('data: ' + JSON.stringify(data) + '\\n\\n');\n  }\n  \n  sendEvent(event, data) {\n    this.res.write('event: ' + event + '\\n');\n    this.res.write('data: ' + data + '\\n\\n');\n  }\n}\n\n// Request handler\nasync function handleRequest(req, res) {\n  const url = new URL(req.url, 'http://localhost');\n  const path = url.pathname;\n  \n  console.log('[API]', req.method, path);\n  \n  // CORS headers\n  res.setHeader('Access-Control-Allow-Origin', '*');\n  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');\n  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');\n  \n  if (req.method === 'OPTIONS') {\n    res.writeHead(204);\n    res.end();\n    return;\n  }\n  \n  // SSE endpoint\n  if (req.method === 'GET' \u0026\u0026 path === '/sse') {\n    const sessionId = crypto.randomUUID();\n    console.log('[SSE] New connection:', sessionId);\n    \n    res.writeHead(200, {\n      'Content-Type': 'text/event-stream',\n      'Cache-Control': 'no-cache',\n      'Connection': 'keep-alive',\n      'X-Accel-Buffering': 'no'\n    });\n    \n    // Send endpoint event\n    res.write('event: endpoint\\n');\n    res.write('data: /message?sessionId=' + sessionId + '\\n\\n');\n    \n    const session = new SSESession(sessionId, res);\n    sessions.set(sessionId, session);\n    \n    // Heartbeat\n    const heartbeat = setInterval(() =\u003e res.write(': keepalive\\n\\n'), 25000);\n    \n    req.on('close', () =\u003e {\n      console.log('[SSE] Closed:', sessionId);\n      clearInterval(heartbeat);\n      sessions.delete(sessionId);\n    });\n    return;\n  }\n  \n  // SSE message endpoint\n  if (req.method === 'POST' \u0026\u0026 path === '/message') {\n    const sessionId = url.searchParams.get('sessionId');\n    const session = sessions.get(sessionId);\n    \n    if (!session) {\n      res.writeHead(404, { 'Content-Type': 'application/json' });\n      res.end(JSON.stringify({ error: 'Session not found' }));\n      return;\n    }\n    \n    let body = '';\n    for await (const chunk of req) body += chunk;\n    \n    try {\n      const request = JSON.parse(body);\n      const { id, method, params } = request;\n      \n      console.log('[SSE]', method, 'id:', id);\n      \n      let response;\n      switch (method) {\n        case 'initialize':\n          response = {\n            jsonrpc: '2.0', id,\n            result: {\n              protocolVersion: '2024-11-05',\n              serverInfo: { name: SERVER_NAME, version: '1.0.0' },\n              capabilities: { tools: { listChanged: false } }\n            }\n          };\n          break;\n          \n        case 'notifications/initialized':\n          break;\n          \n        case 'tools/list':\n          response = { jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } };\n          break;\n          \n        case 'tools/call':\n          try {\n            const result = await executeTool(params.name, params.arguments || {});\n            response = {\n              jsonrpc: '2.0', id,\n              result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }\n            };\n          } catch (e) {\n            response = { jsonrpc: '2.0', id, error: { code: -32603, message: e.message } };\n          }\n          break;\n          \n        case 'ping':\n          response = { jsonrpc: '2.0', id, result: {} };\n          break;\n          \n        default:\n          response = { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } };\n      }\n      \n      if (response) session.send(response);\n      \n      res.writeHead(202, { 'Content-Type': 'application/json' });\n      res.end(JSON.stringify({ status: 'accepted' }));\n      \n    } catch (e) {\n      res.writeHead(400, { 'Content-Type': 'application/json' });\n      res.end(JSON.stringify({ error: e.message }));\n    }\n    return;\n  }\n  \n  // Health check\n  if (path === '/health') {\n    res.writeHead(200, { 'Content-Type': 'application/json' });\n    res.end(JSON.stringify({\n      status: 'healthy',\n      service: SERVER_NAME,\n      version: '1.0.0',\n      transport: 'sse',\n      tools: MCP_TOOLS.length,\n      sessions: sessions.size\n    }));\n    return;\n  }\n  \n  // Metrics\n  if (path === '/metrics') {\n    res.writeHead(200, { 'Content-Type': 'text/plain' });\n    res.end([\n      '# HELP mcp_sessions Active SSE sessions',\n      '# TYPE mcp_sessions gauge',\n      'mcp_sessions ' + sessions.size,\n      '# HELP mcp_tools_available Available MCP tools',\n      '# TYPE mcp_tools_available gauge',\n      'mcp_tools_available ' + MCP_TOOLS.length\n    ].join('\\n'));\n    return;\n  }\n  \n  // List tools (HTTP)\n  if (path === '/list-tools') {\n    res.writeHead(200, { 'Content-Type': 'application/json' });\n    res.end(JSON.stringify({ tools: MCP_TOOLS }));\n    return;\n  }\n  \n  // 404\n  res.writeHead(404, { 'Content-Type': 'application/json' });\n  res.end(JSON.stringify({\n    error: 'Not found',\n    endpoints: ['GET /sse', 'POST /message', 'GET /health', 'GET /metrics', 'GET /list-tools']\n  }));\n}\n\n// Start server\nconst server = http.createServer(handleRequest);\nserver.listen(PORT, '0.0.0.0', () =\u003e {\n  console.log('='.repeat(50));\n  console.log('Knowledge MCP Server v1.0.0');\n  console.log('Port:', PORT);\n  console.log('Transport: SSE');\n  console.log('Tools:', MCP_TOOLS.map(t =\u003e t.name).join(', '));\n  console.log('='.repeat(50));\n});\n"},"kind":"ConfigMap","metadata":{"annotations":{},"creationTimestamp":null,"name":"knowledge-mcp-server-code","namespace":"cortex-knowledge"}}
+  creationTimestamp: "2026-01-17T21:05:09Z"
+  name: knowledge-mcp-server-code
+  namespace: cortex-knowledge
+  resourceVersion: "133626234"
+  uid: 3aa94e27-5ad6-4eb0-b71b-2864efb8bb14

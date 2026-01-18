@@ -1,0 +1,178 @@
+apiVersion: v1
+data:
+  mcp-http-wrapper.py: "#!/usr/bin/env python3\n\"\"\"\nCombined HTTP + SSE wrapper
+    for MCP stdio servers\nSupports both HTTP JSON-RPC and SSE transport for mcp-remote
+    compatibility\n\"\"\"\nimport json\nimport subprocess\nimport sys\nimport os\nimport
+    threading\nimport queue\nimport time\nimport uuid\nimport socket\nfrom http.server
+    import HTTPServer, BaseHTTPRequestHandler\nfrom socketserver import ThreadingMixIn\nfrom
+    urllib.parse import urlparse, parse_qs\n\nMCP_COMMAND = os.getenv('MCP_COMMAND',
+    'python main.py')\nPORT = int(os.getenv('PORT', '3000'))\nSERVER_NAME = os.getenv('MCP_SERVER_NAME',
+    'mcp-server')\n\n# Store active SSE sessions\nsessions = {}\nsessions_lock = threading.Lock()\n\nclass
+    MCPSession:\n    \"\"\"Manages an MCP stdio session for SSE\"\"\"\n    def __init__(self,
+    session_id):\n        self.session_id = session_id\n        self.process = None\n
+    \       self.message_queue = queue.Queue()\n        self.running = True\n        \n
+    \   def start(self):\n        cmd = MCP_COMMAND.split()\n        print(f'[SSE-{self.session_id[:8]}]
+    Starting MCP: {\" \".join(cmd)}', file=sys.stderr, flush=True)\n        self.process
+    = subprocess.Popen(\n            cmd,\n            stdin=subprocess.PIPE,\n            stdout=subprocess.PIPE,\n
+    \           stderr=subprocess.PIPE,\n            text=True,\n            bufsize=1\n
+    \       )\n        threading.Thread(target=self._read_stdout, daemon=True).start()\n
+    \       threading.Thread(target=self._read_stderr, daemon=True).start()\n        print(f'[SSE-{self.session_id[:8]}]
+    MCP process started, PID: {self.process.pid}', file=sys.stderr, flush=True)\n
+    \       \n    def _read_stdout(self):\n        buffer = ''\n        while self.running
+    and self.process and self.process.poll() is None:\n            try:\n                char
+    = self.process.stdout.read(1)\n                if not char:\n                    break\n
+    \               buffer += char\n                if char == '\\n':\n                    line
+    = buffer.strip()\n                    buffer = ''\n                    if line:\n
+    \                       try:\n                            json.loads(line)\n                            self.message_queue.put(('message',
+    line))\n                        except json.JSONDecodeError:\n                            pass\n
+    \           except Exception as e:\n                break\n        self.message_queue.put(('close',
+    None))\n        \n    def _read_stderr(self):\n        while self.running and
+    self.process and self.process.poll() is None:\n            try:\n                line
+    = self.process.stderr.readline()\n                if not line:\n                    break\n
+    \               print(f'[SSE-{self.session_id[:8]}] stderr: {line.rstrip()}',
+    file=sys.stderr, flush=True)\n            except:\n                break\n                \n
+    \   def send_message(self, message):\n        try:\n            if self.process
+    and self.process.poll() is None:\n                self.process.stdin.write(message
+    + '\\n')\n                self.process.stdin.flush()\n                return True\n
+    \       except Exception as e:\n            print(f'[SSE-{self.session_id[:8]}]
+    Send error: {e}', file=sys.stderr, flush=True)\n        return False\n        \n
+    \   def stop(self):\n        self.running = False\n        if self.process:\n
+    \           try:\n                self.process.terminate()\n                self.process.wait(timeout=5)\n
+    \           except:\n                try:\n                    self.process.kill()\n
+    \               except:\n                    pass\n\n# Shared MCP client for HTTP
+    endpoints\nclass MCPStdioClient:\n    def __init__(self):\n        self.process
+    = None\n        self.message_id = 1\n        self.pending_requests = {}\n        self.lock
+    = threading.Lock()\n        self.started = False\n\n    def start(self):\n        if
+    self.started:\n            return\n        cmd = MCP_COMMAND.split()\n        print(f'[HTTP]
+    Starting MCP: {\" \".join(cmd)}', file=sys.stderr, flush=True)\n        self.process
+    = subprocess.Popen(\n            cmd,\n            stdin=subprocess.PIPE,\n            stdout=subprocess.PIPE,\n
+    \           stderr=subprocess.PIPE,\n            text=True,\n            bufsize=1\n
+    \       )\n        threading.Thread(target=self._read_responses, daemon=True).start()\n
+    \       threading.Thread(target=self._read_errors, daemon=True).start()\n        self.started
+    = True\n        print(f'[HTTP] MCP process started, PID: {self.process.pid}',
+    file=sys.stderr, flush=True)\n        time.sleep(1)\n        self._initialize()\n\n
+    \   def _read_errors(self):\n        while True:\n            try:\n                line
+    = self.process.stderr.readline()\n                if not line:\n                    break\n
+    \               print(f'[HTTP-STDERR] {line.rstrip()}', file=sys.stderr, flush=True)\n
+    \           except:\n                break\n\n    def _read_responses(self):\n
+    \       buffer = ''\n        while True:\n            try:\n                char
+    = self.process.stdout.read(1)\n                if not char:\n                    break\n
+    \               buffer += char\n                if char == '\\n':\n                    line
+    = buffer.strip()\n                    buffer = ''\n                    if line:\n
+    \                       try:\n                            response = json.loads(line)\n
+    \                           msg_id = response.get('id')\n                            if
+    msg_id and msg_id in self.pending_requests:\n                                self.pending_requests[msg_id].put(response)\n
+    \                       except json.JSONDecodeError:\n                            pass\n
+    \           except:\n                break\n\n    def _initialize(self):\n        with
+    self.lock:\n            msg_id = self.message_id\n            self.message_id
+    += 1\n        response_queue = queue.Queue()\n        self.pending_requests[msg_id]
+    = response_queue\n        request = {\n            'jsonrpc': '2.0',\n            'id':
+    msg_id,\n            'method': 'initialize',\n            'params': {\n                'protocolVersion':
+    '2024-11-05',\n                'capabilities': {},\n                'clientInfo':
+    {'name': 'cortex-wrapper', 'version': '1.0.0'}\n            }\n        }\n        try:\n
+    \           self.process.stdin.write(json.dumps(request) + '\\n')\n            self.process.stdin.flush()\n
+    \           response = response_queue.get(timeout=10)\n            del self.pending_requests[msg_id]\n
+    \           print(f'[HTTP] Initialized successfully', file=sys.stderr, flush=True)\n
+    \           notification = {'jsonrpc': '2.0', 'method': 'notifications/initialized'}\n
+    \           self.process.stdin.write(json.dumps(notification) + '\\n')\n            self.process.stdin.flush()\n
+    \       except Exception as e:\n            print(f'[HTTP] Init error: {e}', file=sys.stderr,
+    flush=True)\n\n    def send_request(self, method, params=None):\n        with
+    self.lock:\n            msg_id = self.message_id\n            self.message_id
+    += 1\n        response_queue = queue.Queue()\n        self.pending_requests[msg_id]
+    = response_queue\n        request = {'jsonrpc': '2.0', 'id': msg_id, 'method':
+    method}\n        if params:\n            request['params'] = params\n        try:\n
+    \           self.process.stdin.write(json.dumps(request) + '\\n')\n            self.process.stdin.flush()\n
+    \           response = response_queue.get(timeout=60)\n            del self.pending_requests[msg_id]\n
+    \           return response\n        except queue.Empty:\n            return {'jsonrpc':
+    '2.0', 'id': msg_id, 'error': {'code': -32000, 'message': 'Timeout'}}\n        except
+    Exception as e:\n            return {'jsonrpc': '2.0', 'id': msg_id, 'error':
+    {'code': -32603, 'message': str(e)}}\n\nmcp_client = MCPStdioClient()\n\nclass
+    ThreadedHTTPServer(ThreadingMixIn, HTTPServer):\n    \"\"\"Handle requests in
+    separate threads\"\"\"\n    daemon_threads = True\n    allow_reuse_address = True\n\nclass
+    Handler(BaseHTTPRequestHandler):\n    protocol_version = 'HTTP/1.1'\n    \n    def
+    do_GET(self):\n        parsed = urlparse(self.path)\n        \n        if parsed.path
+    == '/sse':\n            self.handle_sse()\n        elif parsed.path == '/health':\n
+    \           self.send_json(200, {\n                'status': 'healthy',\n                'server':
+    SERVER_NAME,\n                'mode': 'http+sse',\n                'active_sessions':
+    len(sessions),\n                'http_mcp_running': mcp_client.started\n            })\n
+    \       elif parsed.path == '/list-tools':\n            response = mcp_client.send_request('tools/list')\n
+    \           if 'error' in response:\n                self.send_json(500, {'error':
+    response['error']})\n            else:\n                tools = response.get('result',
+    {}).get('tools', [])\n                self.send_json(200, {'success': True, 'tools':
+    tools})\n        else:\n            self.send_json(404, {'error': 'Not found'})\n
+    \           \n    def handle_sse(self):\n        session_id = str(uuid.uuid4())\n
+    \       session = MCPSession(session_id)\n        with sessions_lock:\n            sessions[session_id]
+    = session\n        \n        print(f'[SSE] New session: {session_id}', file=sys.stderr,
+    flush=True)\n        session.start()\n        \n        # Send SSE headers\n        self.send_response(200)\n
+    \       self.send_header('Content-Type', 'text/event-stream')\n        self.send_header('Cache-Control',
+    'no-cache, no-store, must-revalidate')\n        self.send_header('Pragma', 'no-cache')\n
+    \       self.send_header('Expires', '0')\n        self.send_header('Connection',
+    'keep-alive')\n        self.send_header('X-Accel-Buffering', 'no')  # Disable
+    nginx buffering\n        self.send_header('Access-Control-Allow-Origin', '*')\n
+    \       self.end_headers()\n        \n        # Disable socket buffering\n        self.wfile.flush()\n
+    \       \n        # Send endpoint event with message URL\n        endpoint = f'/message?sessionId={session_id}'\n
+    \       event_data = f'event: endpoint\\ndata: {endpoint}\\n\\n'\n        self.wfile.write(event_data.encode())\n
+    \       self.wfile.flush()\n        print(f'[SSE-{session_id[:8]}] Sent endpoint:
+    {endpoint}', file=sys.stderr, flush=True)\n        \n        try:\n            while
+    session.running:\n                try:\n                    event_type, data =
+    session.message_queue.get(timeout=15)\n                    if event_type == 'close':\n
+    \                       break\n                    elif event_type == 'message':\n
+    \                       msg = f'event: message\\ndata: {data}\\n\\n'\n                        self.wfile.write(msg.encode())\n
+    \                       self.wfile.flush()\n                except queue.Empty:\n
+    \                   # Send keepalive comment\n                    self.wfile.write(b':
+    keepalive\\n\\n')\n                    self.wfile.flush()\n        except (BrokenPipeError,
+    ConnectionResetError, OSError):\n            print(f'[SSE-{session_id[:8]}] Client
+    disconnected', file=sys.stderr, flush=True)\n        finally:\n            session.stop()\n
+    \           with sessions_lock:\n                sessions.pop(session_id, None)\n
+    \           print(f'[SSE-{session_id[:8]}] Session closed', file=sys.stderr, flush=True)\n
+    \           \n    def do_POST(self):\n        parsed = urlparse(self.path)\n        content_length
+    = int(self.headers.get('Content-Length', 0))\n        body = self.rfile.read(content_length).decode()
+    if content_length > 0 else ''\n        \n        if parsed.path == '/message':\n
+    \           query = parse_qs(parsed.query)\n            session_id = query.get('sessionId',
+    [None])[0]\n            \n            if not session_id:\n                self.send_json(400,
+    {'error': 'sessionId required'})\n                return\n                \n            with
+    sessions_lock:\n                session = sessions.get(session_id)\n                \n
+    \           if not session:\n                self.send_json(404, {'error': 'Session
+    not found'})\n                return\n                \n            print(f'[SSE-{session_id[:8]}]
+    Received: {body[:100]}...', file=sys.stderr, flush=True)\n            if session.send_message(body):\n
+    \               self.send_json(202, {'status': 'accepted'})\n            else:\n
+    \               self.send_json(500, {'error': 'Failed to send'})\n                \n
+    \       elif parsed.path == '/':\n            try:\n                request_data
+    = json.loads(body)\n            except:\n                self.send_json(400, {'error':
+    'Invalid JSON'})\n                return\n                \n            method
+    = request_data.get('method')\n            params = request_data.get('params',
+    {})\n            request_id = request_data.get('id')\n            \n            if
+    method in ['tools/list', 'tools/call', 'resources/list', 'resources/read', 'prompts/list',
+    'prompts/get']:\n                response = mcp_client.send_request(method, params
+    if params else None)\n                if request_id and 'id' not in response:\n
+    \                   response['id'] = request_id\n                self.send_json(200,
+    response)\n            else:\n                self.send_json(400, {'error': f'Unknown
+    method: {method}'})\n        else:\n            self.send_json(404, {'error':
+    'Not found'})\n            \n    def send_json(self, status, data):\n        body
+    = json.dumps(data).encode()\n        self.send_response(status)\n        self.send_header('Content-Type',
+    'application/json')\n        self.send_header('Content-Length', len(body))\n        self.send_header('Access-Control-Allow-Origin',
+    '*')\n        self.end_headers()\n        self.wfile.write(body)\n        \n    def
+    do_OPTIONS(self):\n        self.send_response(200)\n        self.send_header('Access-Control-Allow-Origin',
+    '*')\n        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')\n
+    \       self.send_header('Access-Control-Allow-Headers', 'Content-Type')\n        self.end_headers()\n
+    \       \n    def log_message(self, format, *args):\n        print(f'[HTTP] {format
+    % args}', file=sys.stderr, flush=True)\n\nif __name__ == '__main__':\n    print(f'[Wrapper]
+    Starting combined HTTP+SSE wrapper on port {PORT}', flush=True)\n    print(f'[Wrapper]
+    MCP Command: {MCP_COMMAND}', flush=True)\n    print(f'[Wrapper] Server Name: {SERVER_NAME}',
+    flush=True)\n    print(f'[Wrapper] Endpoints:', flush=True)\n    print(f'  GET
+    \ /sse        - SSE stream (for mcp-remote)', flush=True)\n    print(f'  POST
+    /message    - SSE message endpoint', flush=True)\n    print(f'  POST /           -
+    HTTP JSON-RPC', flush=True)\n    print(f'  GET  /health     - Health check', flush=True)\n
+    \   print(f'  GET  /list-tools - List tools', flush=True)\n    \n    mcp_client.start()\n
+    \   \n    server = ThreadedHTTPServer(('0.0.0.0', PORT), Handler)\n    print(f'[Wrapper]
+    Server ready', flush=True)\n    server.serve_forever()\n"
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"mcp-http-wrapper.py":"#!/usr/bin/env python3\n\"\"\"\nCombined HTTP + SSE wrapper for MCP stdio servers\nSupports both HTTP JSON-RPC and SSE transport for mcp-remote compatibility\n\"\"\"\nimport json\nimport subprocess\nimport sys\nimport os\nimport threading\nimport queue\nimport time\nimport uuid\nimport socket\nfrom http.server import HTTPServer, BaseHTTPRequestHandler\nfrom socketserver import ThreadingMixIn\nfrom urllib.parse import urlparse, parse_qs\n\nMCP_COMMAND = os.getenv('MCP_COMMAND', 'python main.py')\nPORT = int(os.getenv('PORT', '3000'))\nSERVER_NAME = os.getenv('MCP_SERVER_NAME', 'mcp-server')\n\n# Store active SSE sessions\nsessions = {}\nsessions_lock = threading.Lock()\n\nclass MCPSession:\n    \"\"\"Manages an MCP stdio session for SSE\"\"\"\n    def __init__(self, session_id):\n        self.session_id = session_id\n        self.process = None\n        self.message_queue = queue.Queue()\n        self.running = True\n        \n    def start(self):\n        cmd = MCP_COMMAND.split()\n        print(f'[SSE-{self.session_id[:8]}] Starting MCP: {\" \".join(cmd)}', file=sys.stderr, flush=True)\n        self.process = subprocess.Popen(\n            cmd,\n            stdin=subprocess.PIPE,\n            stdout=subprocess.PIPE,\n            stderr=subprocess.PIPE,\n            text=True,\n            bufsize=1\n        )\n        threading.Thread(target=self._read_stdout, daemon=True).start()\n        threading.Thread(target=self._read_stderr, daemon=True).start()\n        print(f'[SSE-{self.session_id[:8]}] MCP process started, PID: {self.process.pid}', file=sys.stderr, flush=True)\n        \n    def _read_stdout(self):\n        buffer = ''\n        while self.running and self.process and self.process.poll() is None:\n            try:\n                char = self.process.stdout.read(1)\n                if not char:\n                    break\n                buffer += char\n                if char == '\\n':\n                    line = buffer.strip()\n                    buffer = ''\n                    if line:\n                        try:\n                            json.loads(line)\n                            self.message_queue.put(('message', line))\n                        except json.JSONDecodeError:\n                            pass\n            except Exception as e:\n                break\n        self.message_queue.put(('close', None))\n        \n    def _read_stderr(self):\n        while self.running and self.process and self.process.poll() is None:\n            try:\n                line = self.process.stderr.readline()\n                if not line:\n                    break\n                print(f'[SSE-{self.session_id[:8]}] stderr: {line.rstrip()}', file=sys.stderr, flush=True)\n            except:\n                break\n                \n    def send_message(self, message):\n        try:\n            if self.process and self.process.poll() is None:\n                self.process.stdin.write(message + '\\n')\n                self.process.stdin.flush()\n                return True\n        except Exception as e:\n            print(f'[SSE-{self.session_id[:8]}] Send error: {e}', file=sys.stderr, flush=True)\n        return False\n        \n    def stop(self):\n        self.running = False\n        if self.process:\n            try:\n                self.process.terminate()\n                self.process.wait(timeout=5)\n            except:\n                try:\n                    self.process.kill()\n                except:\n                    pass\n\n# Shared MCP client for HTTP endpoints\nclass MCPStdioClient:\n    def __init__(self):\n        self.process = None\n        self.message_id = 1\n        self.pending_requests = {}\n        self.lock = threading.Lock()\n        self.started = False\n\n    def start(self):\n        if self.started:\n            return\n        cmd = MCP_COMMAND.split()\n        print(f'[HTTP] Starting MCP: {\" \".join(cmd)}', file=sys.stderr, flush=True)\n        self.process = subprocess.Popen(\n            cmd,\n            stdin=subprocess.PIPE,\n            stdout=subprocess.PIPE,\n            stderr=subprocess.PIPE,\n            text=True,\n            bufsize=1\n        )\n        threading.Thread(target=self._read_responses, daemon=True).start()\n        threading.Thread(target=self._read_errors, daemon=True).start()\n        self.started = True\n        print(f'[HTTP] MCP process started, PID: {self.process.pid}', file=sys.stderr, flush=True)\n        time.sleep(1)\n        self._initialize()\n\n    def _read_errors(self):\n        while True:\n            try:\n                line = self.process.stderr.readline()\n                if not line:\n                    break\n                print(f'[HTTP-STDERR] {line.rstrip()}', file=sys.stderr, flush=True)\n            except:\n                break\n\n    def _read_responses(self):\n        buffer = ''\n        while True:\n            try:\n                char = self.process.stdout.read(1)\n                if not char:\n                    break\n                buffer += char\n                if char == '\\n':\n                    line = buffer.strip()\n                    buffer = ''\n                    if line:\n                        try:\n                            response = json.loads(line)\n                            msg_id = response.get('id')\n                            if msg_id and msg_id in self.pending_requests:\n                                self.pending_requests[msg_id].put(response)\n                        except json.JSONDecodeError:\n                            pass\n            except:\n                break\n\n    def _initialize(self):\n        with self.lock:\n            msg_id = self.message_id\n            self.message_id += 1\n        response_queue = queue.Queue()\n        self.pending_requests[msg_id] = response_queue\n        request = {\n            'jsonrpc': '2.0',\n            'id': msg_id,\n            'method': 'initialize',\n            'params': {\n                'protocolVersion': '2024-11-05',\n                'capabilities': {},\n                'clientInfo': {'name': 'cortex-wrapper', 'version': '1.0.0'}\n            }\n        }\n        try:\n            self.process.stdin.write(json.dumps(request) + '\\n')\n            self.process.stdin.flush()\n            response = response_queue.get(timeout=10)\n            del self.pending_requests[msg_id]\n            print(f'[HTTP] Initialized successfully', file=sys.stderr, flush=True)\n            notification = {'jsonrpc': '2.0', 'method': 'notifications/initialized'}\n            self.process.stdin.write(json.dumps(notification) + '\\n')\n            self.process.stdin.flush()\n        except Exception as e:\n            print(f'[HTTP] Init error: {e}', file=sys.stderr, flush=True)\n\n    def send_request(self, method, params=None):\n        with self.lock:\n            msg_id = self.message_id\n            self.message_id += 1\n        response_queue = queue.Queue()\n        self.pending_requests[msg_id] = response_queue\n        request = {'jsonrpc': '2.0', 'id': msg_id, 'method': method}\n        if params:\n            request['params'] = params\n        try:\n            self.process.stdin.write(json.dumps(request) + '\\n')\n            self.process.stdin.flush()\n            response = response_queue.get(timeout=60)\n            del self.pending_requests[msg_id]\n            return response\n        except queue.Empty:\n            return {'jsonrpc': '2.0', 'id': msg_id, 'error': {'code': -32000, 'message': 'Timeout'}}\n        except Exception as e:\n            return {'jsonrpc': '2.0', 'id': msg_id, 'error': {'code': -32603, 'message': str(e)}}\n\nmcp_client = MCPStdioClient()\n\nclass ThreadedHTTPServer(ThreadingMixIn, HTTPServer):\n    \"\"\"Handle requests in separate threads\"\"\"\n    daemon_threads = True\n    allow_reuse_address = True\n\nclass Handler(BaseHTTPRequestHandler):\n    protocol_version = 'HTTP/1.1'\n    \n    def do_GET(self):\n        parsed = urlparse(self.path)\n        \n        if parsed.path == '/sse':\n            self.handle_sse()\n        elif parsed.path == '/health':\n            self.send_json(200, {\n                'status': 'healthy',\n                'server': SERVER_NAME,\n                'mode': 'http+sse',\n                'active_sessions': len(sessions),\n                'http_mcp_running': mcp_client.started\n            })\n        elif parsed.path == '/list-tools':\n            response = mcp_client.send_request('tools/list')\n            if 'error' in response:\n                self.send_json(500, {'error': response['error']})\n            else:\n                tools = response.get('result', {}).get('tools', [])\n                self.send_json(200, {'success': True, 'tools': tools})\n        else:\n            self.send_json(404, {'error': 'Not found'})\n            \n    def handle_sse(self):\n        session_id = str(uuid.uuid4())\n        session = MCPSession(session_id)\n        with sessions_lock:\n            sessions[session_id] = session\n        \n        print(f'[SSE] New session: {session_id}', file=sys.stderr, flush=True)\n        session.start()\n        \n        # Send SSE headers\n        self.send_response(200)\n        self.send_header('Content-Type', 'text/event-stream')\n        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')\n        self.send_header('Pragma', 'no-cache')\n        self.send_header('Expires', '0')\n        self.send_header('Connection', 'keep-alive')\n        self.send_header('X-Accel-Buffering', 'no')  # Disable nginx buffering\n        self.send_header('Access-Control-Allow-Origin', '*')\n        self.end_headers()\n        \n        # Disable socket buffering\n        self.wfile.flush()\n        \n        # Send endpoint event with message URL\n        endpoint = f'/message?sessionId={session_id}'\n        event_data = f'event: endpoint\\ndata: {endpoint}\\n\\n'\n        self.wfile.write(event_data.encode())\n        self.wfile.flush()\n        print(f'[SSE-{session_id[:8]}] Sent endpoint: {endpoint}', file=sys.stderr, flush=True)\n        \n        try:\n            while session.running:\n                try:\n                    event_type, data = session.message_queue.get(timeout=15)\n                    if event_type == 'close':\n                        break\n                    elif event_type == 'message':\n                        msg = f'event: message\\ndata: {data}\\n\\n'\n                        self.wfile.write(msg.encode())\n                        self.wfile.flush()\n                except queue.Empty:\n                    # Send keepalive comment\n                    self.wfile.write(b': keepalive\\n\\n')\n                    self.wfile.flush()\n        except (BrokenPipeError, ConnectionResetError, OSError):\n            print(f'[SSE-{session_id[:8]}] Client disconnected', file=sys.stderr, flush=True)\n        finally:\n            session.stop()\n            with sessions_lock:\n                sessions.pop(session_id, None)\n            print(f'[SSE-{session_id[:8]}] Session closed', file=sys.stderr, flush=True)\n            \n    def do_POST(self):\n        parsed = urlparse(self.path)\n        content_length = int(self.headers.get('Content-Length', 0))\n        body = self.rfile.read(content_length).decode() if content_length \u003e 0 else ''\n        \n        if parsed.path == '/message':\n            query = parse_qs(parsed.query)\n            session_id = query.get('sessionId', [None])[0]\n            \n            if not session_id:\n                self.send_json(400, {'error': 'sessionId required'})\n                return\n                \n            with sessions_lock:\n                session = sessions.get(session_id)\n                \n            if not session:\n                self.send_json(404, {'error': 'Session not found'})\n                return\n                \n            print(f'[SSE-{session_id[:8]}] Received: {body[:100]}...', file=sys.stderr, flush=True)\n            if session.send_message(body):\n                self.send_json(202, {'status': 'accepted'})\n            else:\n                self.send_json(500, {'error': 'Failed to send'})\n                \n        elif parsed.path == '/':\n            try:\n                request_data = json.loads(body)\n            except:\n                self.send_json(400, {'error': 'Invalid JSON'})\n                return\n                \n            method = request_data.get('method')\n            params = request_data.get('params', {})\n            request_id = request_data.get('id')\n            \n            if method in ['tools/list', 'tools/call', 'resources/list', 'resources/read', 'prompts/list', 'prompts/get']:\n                response = mcp_client.send_request(method, params if params else None)\n                if request_id and 'id' not in response:\n                    response['id'] = request_id\n                self.send_json(200, response)\n            else:\n                self.send_json(400, {'error': f'Unknown method: {method}'})\n        else:\n            self.send_json(404, {'error': 'Not found'})\n            \n    def send_json(self, status, data):\n        body = json.dumps(data).encode()\n        self.send_response(status)\n        self.send_header('Content-Type', 'application/json')\n        self.send_header('Content-Length', len(body))\n        self.send_header('Access-Control-Allow-Origin', '*')\n        self.end_headers()\n        self.wfile.write(body)\n        \n    def do_OPTIONS(self):\n        self.send_response(200)\n        self.send_header('Access-Control-Allow-Origin', '*')\n        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')\n        self.send_header('Access-Control-Allow-Headers', 'Content-Type')\n        self.end_headers()\n        \n    def log_message(self, format, *args):\n        print(f'[HTTP] {format % args}', file=sys.stderr, flush=True)\n\nif __name__ == '__main__':\n    print(f'[Wrapper] Starting combined HTTP+SSE wrapper on port {PORT}', flush=True)\n    print(f'[Wrapper] MCP Command: {MCP_COMMAND}', flush=True)\n    print(f'[Wrapper] Server Name: {SERVER_NAME}', flush=True)\n    print(f'[Wrapper] Endpoints:', flush=True)\n    print(f'  GET  /sse        - SSE stream (for mcp-remote)', flush=True)\n    print(f'  POST /message    - SSE message endpoint', flush=True)\n    print(f'  POST /           - HTTP JSON-RPC', flush=True)\n    print(f'  GET  /health     - Health check', flush=True)\n    print(f'  GET  /list-tools - List tools', flush=True)\n    \n    mcp_client.start()\n    \n    server = ThreadedHTTPServer(('0.0.0.0', PORT), Handler)\n    print(f'[Wrapper] Server ready', flush=True)\n    server.serve_forever()\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"mcp-http-wrapper","namespace":"cortex-system"}}
+  creationTimestamp: "2025-12-26T12:57:48Z"
+  name: mcp-http-wrapper
+  namespace: cortex-system
+  resourceVersion: "133408631"
+  uid: 1c1e387c-12bf-4751-a6d1-94561c472c8e
