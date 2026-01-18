@@ -44,7 +44,7 @@ spec:
           protocol: TCP
         env:
         - name: REDIS_HOST
-          value: "redis-queue.cortex.svc.cluster.local"
+          value: "10.42.6.150"
         - name: REDIS_PORT
           value: "6379"
         - name: AUTO_APPROVE_THRESHOLD
