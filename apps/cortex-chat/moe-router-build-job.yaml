@@ -79,7 +79,7 @@ data:
     def classify_intent(message: str) -> dict:
         """
         Classify user intent using Claude
-        Returns: {expert: str, confidence: float, reasoning: str}
+        Returns dict with expert, confidence, and reasoning
         """
         experts_desc = "\n".join([
             f"- {e['name']}: {e['specialization']}"
