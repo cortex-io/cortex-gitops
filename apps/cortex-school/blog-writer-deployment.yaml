@@ -32,18 +32,6 @@ spec:
       labels:
         app: blog-writer
     spec:
-      initContainers:
-      - name: clone-blog-repo
-        image: alpine/git:latest
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            echo "Cloning blog repository..."
-            git clone https://github.com/ry-ops/blog.git /blog
-            echo "Blog repository cloned successfully"
-        volumeMounts:
-        - name: blog-repo
-          mountPath: /blog
       containers:
       - name: blog-writer
         image: 10.43.170.72:5000/cortex-blog-writer:latest

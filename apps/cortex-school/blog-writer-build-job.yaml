@@ -399,6 +399,18 @@ data:
     if __name__ == '__main__':
         import threading
 
+        # Clone blog repository if it doesn't exist
+        if not os.path.exists(f"{BLOG_REPO_PATH}/.git"):
+            logger.info(f"Cloning blog repository to {BLOG_REPO_PATH}")
+            try:
+                subprocess.run(['git', 'clone', 'https://github.com/ry-ops/blog.git', BLOG_REPO_PATH], check=True)
+                logger.info("Blog repository cloned successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to clone blog repository: {e}")
+                # Continue anyway - service can still respond to health checks
+        else:
+            logger.info(f"Blog repository already exists at {BLOG_REPO_PATH}")
+
         # Start blog writer loop in background thread
         blog_writer_thread = threading.Thread(target=run_blog_writer_loop, daemon=True)
         blog_writer_thread.start()
