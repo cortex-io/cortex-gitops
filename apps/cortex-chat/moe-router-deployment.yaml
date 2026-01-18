@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: moe-router-config
+  namespace: cortex-chat
+data:
+  config.yaml: |
+    # MoE Router Configuration
+    router:
+      port: 8080
+      experts:
+        - name: general
+          endpoint: http://cortex-orchestrator.cortex.svc.cluster.local:8000
+          weight: 1.0
+          specialization: "general conversation and task routing"
+        - name: infrastructure
+          endpoint: http://cortex-orchestrator.cortex.svc.cluster.local:8000
+          weight: 2.0
+          specialization: "kubernetes, deployment, infrastructure management"
+        - name: security
+          endpoint: http://cortex-orchestrator.cortex.svc.cluster.local:8000
+          weight: 2.0
+          specialization: "security scanning, vulnerability analysis, compliance"
+        - name: automation
+          endpoint: http://cortex-orchestrator.cortex.svc.cluster.local:8000
+          weight: 1.5
+          specialization: "workflow automation, n8n, langflow"
+
+    qdrant:
+      host: qdrant.cortex-chat.svc.cluster.local
+      port: 6333
+      collection: chat_memory
+
+    telemetry:
+      enabled: true
+      redis_host: redis.cortex-system.svc.cluster.local
+      redis_port: 6379
+      redis_key_prefix: "moe:telemetry:"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moe-router
+  namespace: cortex-chat
+  labels:
+    app: moe-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moe-router
+  template:
+    metadata:
+      labels:
+        app: moe-router
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: moe-router
+        image: 10.43.170.72:5000/moe-router:latest
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: CONFIG_PATH
+          value: /config/config.yaml
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cortex-chat-secrets
+              key: anthropic-api-key
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      volumes:
+      - name: config
+        configMap:
+          name: moe-router-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moe-router
+  namespace: cortex-chat
+  labels:
+    app: moe-router
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: moe-router
