@@ -34,6 +34,7 @@ data:
     RELEVANCE_THRESHOLD = float(os.getenv('RELEVANCE_THRESHOLD', '0.90'))
     GITHUB_USER_EMAIL = os.getenv('GITHUB_USER_EMAIL', 'cortex@ry-ops.com')
     GITHUB_USER_NAME = os.getenv('GITHUB_USER_NAME', 'Cortex')
+    GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '300'))  # 5 minutes
 
     # Redis connection
@@ -292,6 +293,11 @@ data:
             subprocess.run(['git', 'config', 'user.email', GITHUB_USER_EMAIL], check=True)
             subprocess.run(['git', 'config', 'user.name', GITHUB_USER_NAME], check=True)
 
+            # Configure remote URL with token for authentication
+            if GITHUB_TOKEN:
+                remote_url = f"https://{GITHUB_TOKEN}@github.com/ry-ops/blog.git"
+                subprocess.run(['git', 'remote', 'set-url', 'origin', remote_url], check=True)
+
             # Pull latest
             subprocess.run(['git', 'pull', 'origin', 'main'], check=True)
 
@@ -407,7 +413,12 @@ data:
         if not os.path.exists(f"{BLOG_REPO_PATH}/.git"):
             logger.info(f"Cloning blog repository to {BLOG_REPO_PATH}")
             try:
-                subprocess.run(['git', 'clone', 'https://github.com/ry-ops/blog.git', BLOG_REPO_PATH], check=True)
+                # Use GitHub token for authentication
+                if GITHUB_TOKEN:
+                    clone_url = f"https://{GITHUB_TOKEN}@github.com/ry-ops/blog.git"
+                else:
+                    clone_url = "https://github.com/ry-ops/blog.git"
+                subprocess.run(['git', 'clone', clone_url, BLOG_REPO_PATH], check=True)
                 logger.info("Blog repository cloned successfully")
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to clone blog repository: {e}")

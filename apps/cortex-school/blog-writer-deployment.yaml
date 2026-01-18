@@ -56,6 +56,11 @@ spec:
           value: "cortex@ry-ops.com"
         - name: GITHUB_USER_NAME
           value: "Cortex"
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-token
+              key: token
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
