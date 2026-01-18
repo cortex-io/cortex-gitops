@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: youtube-school-bridge
+  namespace: cortex
+  labels:
+    app: youtube-school-bridge
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: youtube-school-bridge
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: youtube-school-bridge
+  namespace: cortex
+  labels:
+    app: youtube-school-bridge
+    component: bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: youtube-school-bridge
+  template:
+    metadata:
+      labels:
+        app: youtube-school-bridge
+        component: bridge
+    spec:
+      containers:
+      - name: bridge
+        image: 10.43.170.72:5000/youtube-school-bridge:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: REDIS_HOST
+          value: "redis-queue.cortex.svc.cluster.local"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: POLL_INTERVAL
+          value: "5"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
