@@ -60,7 +60,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: anthropic-api-key
-              key: api-key
+              key: key
         volumeMounts:
         - name: blog-repo
           mountPath: /blog
