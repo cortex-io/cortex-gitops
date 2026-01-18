@@ -262,7 +262,7 @@ data:
       image: /images/posts/{full_slug}-hero.svg
       ogImage: /images/posts/{full_slug}-hero-og.png
       generated: true
-      generatedAt: {datetime.utcnow().isoformat()}Z
+      generatedAt: '{datetime.utcnow().isoformat()}Z'
     ---
 
     """
