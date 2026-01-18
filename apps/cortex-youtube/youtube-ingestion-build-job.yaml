@@ -1,0 +1,234 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: youtube-ingestion-source
+  namespace: cortex-youtube
+data:
+  app.py: |
+    #!/usr/bin/env python3
+    """
+    YouTube Ingestion Service
+    Monitors YouTube channels, analyzes videos, and queues improvements
+    """
+    import os
+    import json
+    import time
+    import logging
+    import hashlib
+    from flask import Flask, jsonify, request
+    from redis import Redis
+    from datetime import datetime
+    import anthropic
+    
+    # Configure logging
+    logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'))
+    logger = logging.getLogger(__name__)
+    
+    app = Flask(__name__)
+    
+    # Configuration
+    REDIS_HOST = os.getenv('REDIS_HOST', 'redis-queue')
+    REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+    ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+    IMPROVEMENTS_QUEUE = os.getenv('IMPROVEMENTS_QUEUE', 'youtube:improvements')
+    POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '300'))  # 5 minutes
+    
+    # Redis connection
+    redis_client = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    
+    # Anthropic client
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    
+    def analyze_video_with_claude(video_id, title, description, transcript=""):
+        """Analyze video content with Claude to extract improvements"""
+        try:
+            prompt = f"""Analyze this educational YouTube video and identify specific improvements Cortex could learn and implement.
+    
+    Video: {title}
+    ID: {video_id}
+    Description: {description}
+    
+    Provide a JSON response with:
+    1. relevance (0.0-1.0): How relevant is this to Cortex's learning
+    2. improvements object with:
+       - passive: Array of knowledge/concepts to learn (no code changes)
+       - active: Array of actionable improvements (require implementation)
+    
+    Each improvement should have:
+    - category: knowledge|skill|monitoring|capability|architecture|security|database|integration
+    - type: concept|pattern|implementation|enhancement|tool
+    - description: Clear description
+    - implementation_notes: How to implement (for active improvements)
+    - auto_approve: boolean (true only for low-risk monitoring/knowledge)
+    - status: "pending"
+    - proposed_at: ISO timestamp
+    
+    Focus on: DevOps, Kubernetes, GitOps, automation, monitoring, and platform engineering.
+    Return ONLY valid JSON, no markdown or explanation."""
+    
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+    
+            response_text = message.content[0].text
+    
+            # Parse Claude's response
+            analysis = json.loads(response_text)
+    
+            # Add video metadata
+            analysis['video_id'] = video_id
+            analysis['title'] = title
+            analysis['description'] = description
+            analysis['analyzed_at'] = datetime.utcnow().isoformat()
+    
+            # Ensure improvements structure
+            if 'improvements' not in analysis:
+                analysis['improvements'] = {'passive': [], 'active': []}
+    
+            # Add timestamps to each improvement
+            now = datetime.utcnow().isoformat()
+            for imp in analysis['improvements'].get('passive', []):
+                if 'proposed_at' not in imp:
+                    imp['proposed_at'] = now
+            for imp in analysis['improvements'].get('active', []):
+                if 'proposed_at' not in imp:
+                    imp['proposed_at'] = now
+    
+            return analysis
+    
+        except Exception as e:
+            logger.error(f"Error analyzing video {video_id}: {e}")
+            return None
+    
+    def queue_video_analysis(analysis):
+        """Queue video analysis to youtube:improvements"""
+        try:
+            redis_client.lpush(IMPROVEMENTS_QUEUE, json.dumps(analysis))
+            logger.info(f"Queued analysis for video: {analysis.get('title')}")
+            return True
+        except Exception as e:
+            logger.error(f"Error queuing analysis: {e}")
+            return False
+    
+    @app.route('/health')
+    def health():
+        """Health check endpoint"""
+        try:
+            redis_client.ping()
+            return jsonify({'status': 'healthy', 'redis': 'connected'}), 200
+        except Exception as e:
+            return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
+    
+    @app.route('/analyze', methods=['POST'])
+    def analyze_video():
+        """Analyze a video and queue improvements"""
+        try:
+            data = request.json
+            video_id = data.get('video_id')
+            title = data.get('title', f'Video {video_id}')
+            description = data.get('description', '')
+    
+            if not video_id:
+                return jsonify({'error': 'video_id required'}), 400
+    
+            logger.info(f"Analyzing video: {title} ({video_id})")
+    
+            # Analyze with Claude
+            analysis = analyze_video_with_claude(video_id, title, description)
+    
+            if not analysis:
+                return jsonify({'error': 'Analysis failed'}), 500
+    
+            # Queue for bridge processing
+            if queue_video_analysis(analysis):
+                passive_count = len(analysis.get('improvements', {}).get('passive', []))
+                active_count = len(analysis.get('improvements', {}).get('active', []))
+    
+                return jsonify({
+                    'success': True,
+                    'video_id': video_id,
+                    'relevance': analysis.get('relevance', 0),
+                    'improvements': {
+                        'passive': passive_count,
+                        'active': active_count,
+                        'total': passive_count + active_count
+                    }
+                }), 200
+            else:
+                return jsonify({'error': 'Failed to queue'}), 500
+    
+        except Exception as e:
+            logger.error(f"Error in analyze endpoint: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/status')
+    def status():
+        """Return service status"""
+        try:
+            queue_size = redis_client.llen(IMPROVEMENTS_QUEUE)
+            return jsonify({
+                'status': 'running',
+                'queue': IMPROVEMENTS_QUEUE,
+                'queue_size': queue_size
+            }), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    if __name__ == '__main__':
+        logger.info(f"YouTube Ingestion Service starting...")
+        logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT}")
+        logger.info(f"Queue: {IMPROVEMENTS_QUEUE}")
+    
+        # Start Flask API
+        app.run(host='0.0.0.0', port=8080)
+  requirements.txt: |
+    flask==3.0.0
+    redis==5.0.1
+    anthropic==0.47.0
+  Dockerfile: |
+    FROM python:3.11-slim
+
+    WORKDIR /app
+
+    # Copy all files from context
+    COPY . .
+
+    # Install dependencies
+    RUN pip install --no-cache-dir -r requirements.txt
+
+    # Run as non-root user
+    RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+    USER appuser
+
+    EXPOSE 8080
+
+    CMD ["python", "app.py"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-youtube-ingestion
+  namespace: cortex-youtube
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - "--context=dir:///workspace"
+        - "--dockerfile=/workspace/Dockerfile"
+        - "--destination=10.43.170.72:5000/youtube-ingestion:latest"
+        - "--insecure"
+        - "--skip-tls-verify"
+        volumeMounts:
+        - name: source
+          mountPath: /workspace
+      volumes:
+      - name: source
+        configMap:
+          name: youtube-ingestion-source
+  backoffLimit: 2
