@@ -229,6 +229,10 @@ data:
             svg_path = f"{BLOG_REPO_PATH}/public/images/posts/{full_slug}-hero.svg"
             png_path = f"{BLOG_REPO_PATH}/public/images/posts/{full_slug}-hero-og.png"
 
+            # Ensure directories exist
+            os.makedirs(os.path.dirname(post_path), exist_ok=True)
+            os.makedirs(os.path.dirname(svg_path), exist_ok=True)
+
             # Write SVG hero
             with open(svg_path, 'w') as f:
                 f.write(svg_content)
