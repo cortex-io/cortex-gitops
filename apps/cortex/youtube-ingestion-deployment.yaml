@@ -51,6 +51,8 @@ spec:
           value: /data/knowledge
         - name: CACHE_DIR
           value: /data/cache
+        - name: IMPROVEMENTS_QUEUE
+          value: improvements:raw
         image: 10.43.170.72:5000/youtube-ingestion:cached
         imagePullPolicy: IfNotPresent
         livenessProbe:
