@@ -109,9 +109,6 @@ spec:
         - mountPath: /app/src/ingestion-service.js
           name: fixes
           subPath: ingestion-service.js
-        - mountPath: /app/src/index.js
-          name: index-fix
-          subPath: index.js
         - mountPath: /app/src/learning-tracker.js
           name: learning-tracker
           subPath: learning-tracker.js
@@ -131,10 +128,6 @@ spec:
           defaultMode: 420
           name: youtube-ingestion-fixes
         name: fixes
-      - configMap:
-          defaultMode: 420
-          name: youtube-index-fixed
-        name: index-fix
       - configMap:
           defaultMode: 420
           name: youtube-ingestion-learning-tracker
