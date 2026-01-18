@@ -4,6 +4,7 @@ metadata:
   name: blog-repo-pvc
   namespace: cortex-school
 spec:
+  storageClassName: local-path
   accessModes:
     - ReadWriteOnce
   resources:
