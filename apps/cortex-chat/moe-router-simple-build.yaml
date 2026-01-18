@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: moe-router-build-simple
+  namespace: cortex-chat
+data:
+  Dockerfile: |
+    FROM python:3.11-slim
+    WORKDIR /app
+    RUN pip install --no-cache-dir flask==3.0.0 anthropic==0.50.0 requests==2.31.0 redis==5.0.1 qdrant-client==1.7.0
+    RUN printf '#!/usr/bin/env python3\nimport os, json, logging\nfrom flask import Flask, request, jsonify\nimport requests\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger(__name__)\napp = Flask(__name__)\n\n@app.route("/health")\ndef health():\n    return jsonify({"status": "healthy", "service": "moe-router"}), 200\n\n@app.route("/chat", methods=["POST"])\ndef chat():\n    try:\n        data = request.json\n        message = data.get("message", "")\n        conversation_id = data.get("conversation_id", "default")\n        \n        expert_url = os.getenv("EXPERT_GENERAL", "http://cortex-orchestrator.cortex.svc.cluster.local:8000")\n        logger.info(f"Routing to expert: {expert_url}")\n        \n        response = requests.post(f"{expert_url}/chat", json={"message": message, "conversation_id": conversation_id}, timeout=30)\n        \n        if response.status_code == 200:\n            result = response.json()\n            return jsonify({"response": result.get("response", ""), "expert": "general", "routed": True}), 200\n        \n        return jsonify({"response": f"MoE router received: {message}", "expert": "general", "routed": False}), 200\n    except Exception as e:\n        logger.error(f"Error: {e}")\n        return jsonify({"error": str(e)}), 500\n\nif __name__ == "__main__":\n    app.run(host="0.0.0.0", port=8080)\n' > app.py
+    USER 1000
+    CMD ["python", "app.py"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-moe-simple
+  namespace: cortex-chat
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - "--dockerfile=/workspace/Dockerfile"
+        - "--context=dir:///workspace"
+        - "--destination=10.43.170.72:5000/moe-router:latest"
+        - "--insecure"
+        - "--skip-tls-verify"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 1Gi
+        volumeMounts:
+        - name: dockerfile
+          mountPath: /workspace
+      volumes:
+      - name: dockerfile
+        configMap:
+          name: moe-router-build-simple
