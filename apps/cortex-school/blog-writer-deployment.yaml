@@ -1,17 +1,4 @@
 apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: blog-repo-pvc
-  namespace: cortex-school
-spec:
-  storageClassName: local-path
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
-apiVersion: v1
 kind: Service
 metadata:
   name: blog-writer
@@ -51,13 +38,9 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - |
-            if [ ! -d "/blog/.git" ]; then
-              echo "Cloning blog repository..."
-              git clone https://github.com/ry-ops/blog.git /blog
-            else
-              echo "Blog repository already exists, pulling latest..."
-              cd /blog && git pull origin main
-            fi
+            echo "Cloning blog repository..."
+            git clone https://github.com/ry-ops/blog.git /blog
+            echo "Blog repository cloned successfully"
         volumeMounts:
         - name: blog-repo
           mountPath: /blog
@@ -114,5 +97,4 @@ spec:
           periodSeconds: 5
       volumes:
       - name: blog-repo
-        persistentVolumeClaim:
-          claimName: blog-repo-pvc
+        emptyDir: {}
