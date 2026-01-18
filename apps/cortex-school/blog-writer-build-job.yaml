@@ -248,11 +248,14 @@ data:
             if not render_svg_to_png(svg_content, png_path):
                 logger.warning("PNG rendering failed, continuing without OG image")
 
-            # Create frontmatter
+            # Create frontmatter (escape single quotes in title/description for YAML)
+            escaped_title = title.replace("'", "''")
+            escaped_description = improvement.get('description', title)[:150].replace("'", "''")
+
             frontmatter = f"""---
-    title: '{title}'
+    title: '{escaped_title}'
     category: {category}
-    description: Cortex explores {improvement.get('description', title)[:150]}
+    description: Cortex explores {escaped_description}
     date: {datetime.utcnow().isoformat()}Z
     author:
       name: Cortex
