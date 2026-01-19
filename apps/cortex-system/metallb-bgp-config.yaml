@@ -1,0 +1,28 @@
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: udm-pro
+  namespace: metallb-system
+spec:
+  myASN: 64512
+  peerASN: 64512
+  peerAddress: 10.88.145.1  # UDM Pro gateway IP
+  # Optional: Set hold time (default 90s)
+  holdTime: 90s
+  # Optional: Set keepalive time (default 30s)
+  keepaliveTime: 30s
+---
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: default-bgp-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - default-pool
+  # Advertise all LoadBalancer IPs via BGP
+  aggregationLength: 32
+  # Optional: Add communities for route filtering
+  # communities:
+  #   - 64512:100
