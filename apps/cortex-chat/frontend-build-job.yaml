@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-build
+  namespace: cortex-chat
+data:
+  Dockerfile: |
+    FROM nginx:1.25-alpine
+    COPY index.html /usr/share/nginx/html/
+    USER 101
+    EXPOSE 80
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-frontend
+  namespace: cortex-chat
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - "--dockerfile=/workspace/Dockerfile"
+        - "--context=dir:///workspace"
+        - "--destination=10.43.170.72:5000/cortex-chat-frontend:latest"
+        - "--insecure"
+        - "--skip-tls-verify"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 1Gi
+        volumeMounts:
+        - name: dockerfile
+          mountPath: /workspace/Dockerfile
+          subPath: Dockerfile
+        - name: frontend-html
+          mountPath: /workspace/index.html
+          subPath: index.html
+      volumes:
+      - name: dockerfile
+        configMap:
+          name: frontend-build
+      - name: frontend-html
+        configMap:
+          name: frontend-html

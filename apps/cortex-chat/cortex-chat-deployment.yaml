@@ -35,8 +35,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - image: nginx:1.25-alpine
-        imagePullPolicy: IfNotPresent
+      - image: 10.43.170.72:5000/cortex-chat-frontend:latest
+        imagePullPolicy: Always
         name: frontend
         lifecycle:
           preStop:
