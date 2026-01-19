@@ -7,11 +7,12 @@ data:
   Dockerfile: |
     FROM python:3.11-slim
     WORKDIR /app
-    COPY simple-chat-api.py /app/app.py
     RUN pip install --no-cache-dir flask==3.0.0 flask-cors==4.0.0 anthropic==0.50.0 requests==2.31.0
+    COPY simple-chat-api.py /app/app.py
+    RUN chmod +x /app/app.py
     USER 1000
     EXPOSE 8080
-    CMD ["python", "app.py"]
+    CMD ["python", "/app/app.py"]
   simple-chat-api.py: |
     #!/usr/bin/env python3
     """
