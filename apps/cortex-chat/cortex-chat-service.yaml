@@ -25,4 +25,4 @@ spec:
   selector:
     app: cortex-chat
   sessionAffinity: None
-  type: ClusterIP
+  type: NodePort

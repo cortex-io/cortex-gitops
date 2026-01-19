@@ -7,16 +7,13 @@ metadata:
   name: cortex-chat-frontend
   namespace: cortex-chat
 spec:
-  allocateLoadBalancerNodePorts: true
   clusterIP: 10.43.212.144
   clusterIPs:
   - 10.43.212.144
-  externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
-  loadBalancerIP: 10.88.145.210
   ports:
   - nodePort: 32308
     port: 80
@@ -25,4 +22,4 @@ spec:
   selector:
     app: cortex-chat
   sessionAffinity: None
-  type: LoadBalancer
+  type: NodePort
