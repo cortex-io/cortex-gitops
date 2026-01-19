@@ -87,6 +87,9 @@ spec:
           mountPath: /var/cache/nginx
         - name: run
           mountPath: /var/run
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
         - name: frontend-html
           mountPath: /usr/share/nginx/html
         terminationMessagePath: /dev/termination-log
