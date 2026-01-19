@@ -266,6 +266,24 @@ kubectl get applications -n argocd
 kubectl get pods -n <namespace>
 ```
 
+### Troubleshoot Issues
+
+When encountering problems, follow the **STOP → ANALYZE → DESIGN → IMPLEMENT** workflow:
+
+1. **STOP**: Don't iterate with quick fixes
+2. **ANALYZE**: Consult debugging playbooks at `docs/playbooks/INDEX.md`
+3. **DESIGN**: Choose the right solution from playbook root causes
+4. **IMPLEMENT**: Apply fix via GitOps workflow
+
+**Quick Playbook Reference**:
+- Pod won't start → [`docs/playbooks/pod-debugging/image-pull-failures.md`](docs/playbooks/pod-debugging/image-pull-failures.md)
+- Pod keeps restarting → [`docs/playbooks/pod-debugging/crashloop-backoff.md`](docs/playbooks/pod-debugging/crashloop-backoff.md)
+- Service unreachable from VPN → [`docs/playbooks/network/metallb-l2-vpn-issues.md`](docs/playbooks/network/metallb-l2-vpn-issues.md)
+- ArgoCD won't sync → [`docs/playbooks/gitops/argocd-sync-failures.md`](docs/playbooks/gitops/argocd-sync-failures.md)
+- Build job failing → [`docs/playbooks/gitops/kaniko-build-timeouts.md`](docs/playbooks/gitops/kaniko-build-timeouts.md)
+
+See full index: [`docs/playbooks/INDEX.md`](docs/playbooks/INDEX.md)
+
 ---
 
 ## Verification Commands

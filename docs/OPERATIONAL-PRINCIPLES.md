@@ -27,12 +27,34 @@ Quick fixes create:
 ### The Correct Approach
 
 1. **STOP** - When you hit an error, stop immediately
-2. **ANALYZE** - Understand the root cause completely
+2. **ANALYZE** - Consult debugging playbooks: `docs/playbooks/INDEX.md`
 3. **DESIGN** - Plan a proper solution (use EnterPlanMode if needed)
 4. **ROLLBACK** - Revert any failed attempts via Git
 5. **IMPLEMENT** - Apply the designed solution once
 6. **VERIFY** - Confirm it works
 7. **DOCUMENT** - Explain what was wrong and why the fix works
+
+### When to Consult Playbooks
+
+Before attempting any fix, check if a debugging playbook exists:
+
+- **Pod Issues**: [`docs/playbooks/pod-debugging/`](../playbooks/pod-debugging/)
+  - ImagePullBackOff → [image-pull-failures.md](../playbooks/pod-debugging/image-pull-failures.md)
+  - CrashLoopBackOff → [crashloop-backoff.md](../playbooks/pod-debugging/crashloop-backoff.md)
+
+- **Network Issues**: [`docs/playbooks/network/`](../playbooks/network/)
+  - LoadBalancer unreachable from VPN → [metallb-l2-vpn-issues.md](../playbooks/network/metallb-l2-vpn-issues.md)
+  - Service connectivity → [service-connectivity.md](../playbooks/network/service-connectivity.md)
+
+- **Resource Issues**: [`docs/playbooks/resources/`](../playbooks/resources/)
+  - Pod creation forbidden → [limitrange-violations.md](../playbooks/resources/limitrange-violations.md)
+  - OOMKilled → [oom-killed.md](../playbooks/resources/oom-killed.md)
+
+- **GitOps Issues**: [`docs/playbooks/gitops/`](../playbooks/gitops/)
+  - ArgoCD OutOfSync → [argocd-sync-failures.md](../playbooks/gitops/argocd-sync-failures.md)
+  - Build job timeout → [kaniko-build-timeouts.md](../playbooks/gitops/kaniko-build-timeouts.md)
+
+**Full index**: [`docs/playbooks/INDEX.md`](../playbooks/INDEX.md)
 
 ### Example: What NOT to Do (What I Did Today)
 
