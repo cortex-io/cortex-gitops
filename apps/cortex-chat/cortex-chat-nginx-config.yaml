@@ -17,9 +17,9 @@ data:
         listen 80;
         server_name _;
 
-        # API proxy to backend
+        # API proxy to MoE router
         location /api/ {
-          proxy_pass http://cortex-chat-backend-simple.cortex-chat.svc.cluster.local:8080;
+          proxy_pass http://moe-router.cortex-chat.svc.cluster.local:8080;
           proxy_http_version 1.1;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection "upgrade";
