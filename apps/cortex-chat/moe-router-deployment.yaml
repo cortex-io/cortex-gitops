@@ -171,16 +171,29 @@ data:
 
     @app.route('/api/conversations/<conversation_id>', methods=['GET'])
     def get_conversation(conversation_id):
-        """Get conversation metadata"""
+        """Get conversation with messages - frontend expects conversation.messages"""
         # Auto-create conversation if it doesn't exist
         if conversation_id not in conversations:
             conversations[conversation_id] = []
 
+        # Format messages with timestamps
+        messages = [
+            {
+                "role": msg["role"],
+                "content": msg["content"],
+                "timestamp": "2026-01-19T00:00:00Z"
+            }
+            for msg in conversations[conversation_id]
+        ]
+
         return jsonify({
-            "id": conversation_id,
-            "title": f"Conversation {conversation_id}",
-            "timestamp": "2026-01-19T00:00:00Z",
-            "messageCount": len(conversations[conversation_id])
+            "conversation": {
+                "id": conversation_id,
+                "title": f"Conversation {conversation_id[:30]}..." if len(conversation_id) > 30 else f"Conversation {conversation_id}",
+                "timestamp": "2026-01-19T00:00:00Z",
+                "messageCount": len(messages),
+                "messages": messages
+            }
         }), 200
 
     @app.route('/api/conversations/<conversation_id>/messages', methods=['GET'])
