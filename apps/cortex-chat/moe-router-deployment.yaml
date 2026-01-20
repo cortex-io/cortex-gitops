@@ -99,9 +99,10 @@ data:
         conv_list = [
             {
                 "id": conv_id,
-                "title": f"Conversation {conv_id}",
-                "lastMessage": msgs[-1] if msgs else "No messages",
-                "timestamp": "2026-01-19T00:00:00Z"
+                "title": f"Conversation {conv_id[:30]}..." if len(conv_id) > 30 else f"Conversation {conv_id}",
+                "lastMessage": msgs[-1]["content"] if msgs else "No messages",
+                "timestamp": "2026-01-19T00:00:00Z",
+                "messageCount": len(msgs)
             }
             for conv_id, msgs in conversations.items()
         ]
