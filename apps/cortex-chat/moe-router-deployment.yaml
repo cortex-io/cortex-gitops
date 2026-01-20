@@ -121,7 +121,7 @@ data:
         try:
             data = request.json
             message = data.get('message', '')
-            conversation_id = data.get('conversation_id', 'default')
+            conversation_id = data.get('sessionId', 'default')  # Frontend sends 'sessionId', not 'conversation_id'
 
             logger.info(f"Chat request: conversation={conversation_id}, message={message[:50]}...")
 
