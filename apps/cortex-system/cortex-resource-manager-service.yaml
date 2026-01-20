@@ -1,21 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  annotations:
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.204"],"port":8080,"protocol":"TCP","serviceName":"cortex-system:cortex-resource-manager","allNodes":false}]'
-    metallb.io/ip-allocated-from-pool: default-pool
   name: cortex-resource-manager
   namespace: cortex-system
 spec:
-  allocateLoadBalancerNodePorts: true
-  clusterIP: 10.43.193.51
-  clusterIPs:
-  - 10.43.193.51
-  externalTrafficPolicy: Cluster
-  internalTrafficPolicy: Cluster
-  ipFamilies:
-  - IPv4
-  ipFamilyPolicy: SingleStack
   ports:
   - nodePort: 30884
     port: 8080
@@ -23,5 +11,4 @@ spec:
     targetPort: 8080
   selector:
     app: cortex-resource-manager
-  sessionAffinity: None
-  type: LoadBalancer
+  type: NodePort
