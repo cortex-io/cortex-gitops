@@ -78,6 +78,9 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /config
+        - name: code-fix
+          mountPath: /app/simple-chat-api.py
+          subPath: simple-chat-api.py
         resources:
           requests:
             cpu: 250m
@@ -107,6 +110,9 @@ spec:
       - name: config
         configMap:
           name: moe-router-config
+      - name: code-fix
+        configMap:
+          name: moe-router-code-fix
 ---
 apiVersion: v1
 kind: Service
