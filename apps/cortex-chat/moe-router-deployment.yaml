@@ -171,8 +171,9 @@ data:
     @app.route('/api/conversations/<conversation_id>', methods=['GET'])
     def get_conversation(conversation_id):
         """Get conversation metadata"""
+        # Auto-create conversation if it doesn't exist
         if conversation_id not in conversations:
-            return jsonify({"error": "Conversation not found"}), 404
+            conversations[conversation_id] = []
 
         return jsonify({
             "id": conversation_id,
