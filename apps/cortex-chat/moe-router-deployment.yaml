@@ -168,6 +168,19 @@ data:
             logger.error(f"Chat error: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/conversations/<conversation_id>', methods=['GET'])
+    def get_conversation(conversation_id):
+        """Get conversation metadata"""
+        if conversation_id not in conversations:
+            return jsonify({"error": "Conversation not found"}), 404
+
+        return jsonify({
+            "id": conversation_id,
+            "title": f"Conversation {conversation_id}",
+            "timestamp": "2026-01-19T00:00:00Z",
+            "messageCount": len(conversations[conversation_id])
+        }), 200
+
     @app.route('/api/conversations/<conversation_id>/messages', methods=['GET'])
     def get_messages(conversation_id):
         """Get conversation history"""
