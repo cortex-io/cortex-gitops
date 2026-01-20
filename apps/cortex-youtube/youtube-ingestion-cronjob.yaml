@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: youtube-ingestion-daily
+  namespace: cortex-youtube
+  labels:
+    app: youtube-ingestion
+    component: cronjob
+spec:
+  schedule: "0 6 * * *"  # Daily at 6am UTC (12am CST)
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid  # Don't run if previous job still running
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+      template:
+        metadata:
+          labels:
+            app: youtube-ingestion
+            component: cronjob-pod
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: trigger
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Triggering youtube-ingestion at $(date)"
+
+              # Trigger ingestion (assuming there's a /trigger or /ingest endpoint)
+              response=$(curl -s -w "\n%{http_code}" http://youtube-ingestion.cortex-youtube.svc.cluster.local:8080/trigger || echo "000")
+              http_code=$(echo "$response" | tail -n1)
+              body=$(echo "$response" | sed '$d')
+
+              echo "Response code: $http_code"
+              echo "Response body: $body"
+
+              if [ "$http_code" = "200" ] || [ "$http_code" = "202" ]; then
+                echo "Successfully triggered youtube-ingestion"
+                exit 0
+              else
+                echo "Failed to trigger youtube-ingestion (HTTP $http_code)"
+                exit 1
+              fi
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
