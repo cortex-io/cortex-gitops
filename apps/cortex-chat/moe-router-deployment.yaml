@@ -265,7 +265,7 @@ spec:
       containers:
       - name: moe-router
         image: 10.43.170.72:5000/moe-router:latest
-        command: ["python", "simple-chat-api.py"]
+        command: ["python", "chat-router.py"]
         ports:
         - containerPort: 8080
           name: http
@@ -282,8 +282,8 @@ spec:
         - name: config
           mountPath: /config
         - name: code-fix
-          mountPath: /app/simple-chat-api.py
-          subPath: simple-chat-api.py
+          mountPath: /app/chat-router.py
+          subPath: chat-router.py
         resources:
           requests:
             cpu: 250m
