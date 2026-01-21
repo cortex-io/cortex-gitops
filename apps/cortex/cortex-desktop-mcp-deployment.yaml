@@ -10,7 +10,7 @@ metadata:
   namespace: cortex
 spec:
   progressDeadlineSeconds: 600
-  replicas: 1
+  replicas: 0  # Scaled to 0 - private registry not available
   revisionHistoryLimit: 10
   selector:
     matchLabels:
