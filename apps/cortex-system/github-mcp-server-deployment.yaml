@@ -32,6 +32,28 @@ spec:
       labels:
         app: github-mcp-server
     spec:
+      initContainers:
+      - name: install-deps
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Installing dependencies with retry..."
+          for i in 1 2 3 4 5; do
+            if pip install --no-cache-dir --target=/deps PyGithub==2.1.1; then
+              echo "Dependencies installed successfully"
+              exit 0
+            fi
+            echo "Attempt $i failed, waiting 10s before retry..."
+            sleep 10
+          done
+          echo "Failed to install dependencies after 5 attempts"
+          exit 1
+        volumeMounts:
+        - name: deps
+          mountPath: /deps
       containers:
       - name: mcp
         image: python:3.11-slim
@@ -39,11 +61,8 @@ spec:
         - /bin/bash
         - -c
         - |
-          set -e
-          echo "Installing dependencies..."
-          pip install --no-cache-dir PyGithub==2.1.1
-
           echo "Starting GitHub MCP Server on port 3002..."
+          export PYTHONPATH=/deps:$PYTHONPATH
           python /app/server.py
         env:
         - name: GITHUB_TOKEN
@@ -76,6 +95,8 @@ spec:
         volumeMounts:
         - name: app
           mountPath: /app
+        - name: deps
+          mountPath: /deps
         resources:
           requests:
             cpu: 50m
@@ -87,3 +108,5 @@ spec:
       - name: app
         configMap:
           name: github-mcp-server-code
+      - name: deps
+        emptyDir: {}
