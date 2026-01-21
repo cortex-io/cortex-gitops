@@ -67,6 +67,28 @@ spec:
         app: layer-activator
     spec:
       serviceAccountName: layer-activator
+      initContainers:
+      - name: install-deps
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Installing dependencies with retry..."
+          for i in 1 2 3 4 5; do
+            if pip install --no-cache-dir --target=/deps fastapi uvicorn pydantic httpx redis pyyaml kubernetes; then
+              echo "Dependencies installed successfully"
+              exit 0
+            fi
+            echo "Attempt $i failed, waiting 10s before retry..."
+            sleep 10
+          done
+          echo "Failed to install dependencies after 5 attempts"
+          exit 1
+        volumeMounts:
+        - name: deps
+          mountPath: /deps
       containers:
       - name: activator
         image: python:3.11-slim
@@ -75,9 +97,7 @@ spec:
         - -c
         - |
           set -e
-          echo "Installing dependencies..."
-          pip install --no-cache-dir fastapi uvicorn pydantic httpx redis pyyaml kubernetes
-
+          export PYTHONPATH=/deps:$PYTHONPATH
           echo "Starting Layer Activator..."
           python /app/main.py
         ports:
@@ -95,6 +115,8 @@ spec:
           mountPath: /app
         - name: config
           mountPath: /config
+        - name: deps
+          mountPath: /deps
         resources:
           requests:
             cpu: 100m
@@ -125,3 +147,5 @@ spec:
       - name: config
         configMap:
           name: layer-activator-config
+      - name: deps
+        emptyDir: {}
