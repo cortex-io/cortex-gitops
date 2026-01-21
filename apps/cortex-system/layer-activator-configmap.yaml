@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: layer-activator-config
+  namespace: cortex-system
+data:
+  stacks.yaml: |
+    stacks:
+      - id: security-stack
+        name: Security Operations
+        namespace: cortex-security
+        min_replicas: 0
+        max_replicas: 5
+        cooldown: 300
+        service_port: 3000
+        components:
+          - deployment: sandfly-mcp-server
+            namespace: cortex-system
+          - deployment: github-security-mcp-server
+            namespace: cortex-system
+        routes:
+          - pattern: "scan_.*"
+          - pattern: "security.*"
+          - pattern: "threat.*"
+          - pattern: "vulnerability.*"
+
+      - id: infra-stack
+        name: Infrastructure Operations
+        namespace: cortex-system
+        min_replicas: 0
+        max_replicas: 3
+        cooldown: 300
+        service_port: 3000
+        components:
+          - deployment: proxmox-mcp-server
+          - deployment: unifi-mcp-server
+          - deployment: cloudflare-mcp-server
+          - deployment: kubernetes-mcp-server
+        routes:
+          - pattern: "infra.*"
+          - pattern: "vm.*"
+          - pattern: "network.*"
+          - pattern: "dns.*"
+          - pattern: "cluster.*"
+          - pattern: "proxmox.*"
+          - pattern: "unifi.*"
+
+      - id: knowledge-stack
+        name: Knowledge Operations
+        namespace: cortex-knowledge
+        min_replicas: 0
+        max_replicas: 3
+        cooldown: 600
+        service_port: 8080
+        components:
+          - deployment: mcp-server
+          - deployment: knowledge-graph-api
+        routes:
+          - pattern: "knowledge.*"
+          - pattern: "search.*"
+          - pattern: "query.*"
+          - pattern: "rag.*"
+
+      - id: school-stack
+        name: Cortex Online School
+        namespace: cortex-school
+        min_replicas: 1
+        max_replicas: 5
+        cooldown: 0
+        service_port: 8080
+        components:
+          - deployment: youtube-ingestion
+            namespace: cortex
+          - deployment: implementation-workers
+        routes:
+          - pattern: "learn.*"
+          - pattern: "youtube.*"
+          - pattern: "ingest.*"
+
+      - id: github-stack
+        name: GitHub Operations
+        namespace: cortex-system
+        min_replicas: 0
+        max_replicas: 3
+        cooldown: 300
+        service_port: 3002
+        components:
+          - deployment: github-mcp-server
+        routes:
+          - pattern: "github.*"
+          - pattern: "pr.*"
+          - pattern: "repo.*"
+          - pattern: "commit.*"
+
+      - id: dev-stack
+        name: Development Operations
+        namespace: cortex-dev
+        min_replicas: 0
+        max_replicas: 5
+        cooldown: 300
+        service_port: 8080
+        components:
+          - deployment: code-generator
+          - deployment: issue-parser
+          - deployment: repo-context
+        routes:
+          - pattern: "dev.*"
+          - pattern: "code.*"
+          - pattern: "issue.*"
+          - pattern: "generate.*"
+
+      - id: n8n-stack
+        name: N8N Workflows
+        namespace: cortex-system
+        min_replicas: 0
+        max_replicas: 2
+        cooldown: 300
+        service_port: 3000
+        components:
+          - deployment: n8n-mcp-server
+        routes:
+          - pattern: "workflow.*"
+          - pattern: "n8n.*"
+          - pattern: "automation.*"

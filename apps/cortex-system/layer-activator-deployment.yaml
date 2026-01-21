@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: layer-activator
+  namespace: cortex-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: layer-activator
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "deployments/scale"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: [""]
+  resources: ["pods", "services"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["keda.sh"]
+  resources: ["scaledobjects"]
+  verbs: ["get", "list", "watch", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: layer-activator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: layer-activator
+subjects:
+- kind: ServiceAccount
+  name: layer-activator
+  namespace: cortex-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: layer-activator
+  namespace: cortex-system
+  labels:
+    app: layer-activator
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: layer-activator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: layer-activator
+  namespace: cortex-system
+  labels:
+    app: layer-activator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: layer-activator
+  template:
+    metadata:
+      labels:
+        app: layer-activator
+    spec:
+      serviceAccountName: layer-activator
+      containers:
+      - name: activator
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Installing dependencies..."
+          pip install --no-cache-dir fastapi uvicorn pydantic httpx redis pyyaml kubernetes
+
+          echo "Starting Layer Activator..."
+          python /app/main.py
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: REDIS_URL
+          value: redis://redis.cortex-system.svc.cluster.local:6379
+        - name: STACK_CONFIG
+          value: /config/stacks.yaml
+        - name: PORT
+          value: "8080"
+        volumeMounts:
+        - name: app
+          mountPath: /app
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+      volumes:
+      - name: app
+        configMap:
+          name: layer-activator-code
+      - name: config
+        configMap:
+          name: layer-activator-config
