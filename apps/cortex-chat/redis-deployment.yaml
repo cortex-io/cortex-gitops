@@ -23,6 +23,20 @@ spec:
       labels:
         app: redis
     spec:
+      # Force reschedule to a node where Longhorn can attach the volume
+      # The PVC was stuck on a detached volume owned by k3s-master03
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - k3s-master03
+                - k3s-master01
+                - k3s-master02
       terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true

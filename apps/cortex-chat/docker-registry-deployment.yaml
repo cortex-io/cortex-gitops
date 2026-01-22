@@ -36,8 +36,9 @@ spec:
           value: /var/lib/registry
         - name: REGISTRY_STORAGE_DELETE_ENABLED
           value: 'true'
-        image: registry:2
-        imagePullPolicy: IfNotPresent
+        # Use fully qualified image path to bypass registry-mirror issues
+        image: docker.io/library/registry:2
+        imagePullPolicy: Always
         name: registry
         lifecycle:
           preStop:
