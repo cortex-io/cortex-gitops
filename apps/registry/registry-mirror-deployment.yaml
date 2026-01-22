@@ -51,11 +51,12 @@ spec:
   type: NodePort
 ---
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
   name: registry-mirror
   namespace: registry
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: registry-mirror
@@ -64,19 +65,13 @@ spec:
       labels:
         app: registry-mirror
     spec:
-      # Run on host network so containerd can reach localhost:5000
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
-      tolerations:
-      - operator: Exists  # Run on all nodes including masters
       containers:
       - name: registry
         image: registry:2
         ports:
         - containerPort: 5000
-          hostPort: 5000
         volumeMounts:
-        - name: cache
+        - name: data
           mountPath: /var/lib/registry
         - name: config
           mountPath: /etc/docker/registry
@@ -100,10 +95,9 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
       volumes:
-      # Use emptyDir for cache - each node has its own cache
-      - name: cache
-        emptyDir:
-          sizeLimit: 10Gi
+      - name: data
+        persistentVolumeClaim:
+          claimName: registry-data
       - name: config
         configMap:
           name: registry-config
