@@ -65,6 +65,19 @@ spec:
       labels:
         app: registry-mirror
     spec:
+      # Tolerate all taints to ensure this critical service can run
+      tolerations:
+      - operator: Exists
+      # Prefer k3s-master03 where the PVC is located
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - k3s-master03
       containers:
       - name: registry
         image: registry:2
