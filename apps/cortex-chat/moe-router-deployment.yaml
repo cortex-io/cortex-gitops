@@ -135,7 +135,7 @@ data:
 
             try:
                 intent_response = anthropic_client.messages.create(
-                    model="claude-haiku-4-20250514",
+                    model="claude-3-5-haiku-20241022",
                     max_tokens=10,
                     messages=[{"role": "user", "content": intent_prompt}]
                 )
@@ -211,7 +211,7 @@ data:
         return jsonify({
             "conversation": {
                 "id": conversation_id,
-                "title": f"Conversation {conversation_id[:30]}..." if len(conv_id) > 30 else f"Conversation {conversation_id}",
+                "title": f"Conversation {conversation_id[:30]}..." if len(conversation_id) > 30 else f"Conversation {conversation_id}",
                 "timestamp": "2026-01-19T00:00:00Z",
                 "messageCount": len(messages),
                 "messages": messages
@@ -565,7 +565,7 @@ data:
 
             try:
                 intent_response = anthropic_client.messages.create(
-                    model="claude-haiku-4-20250514",
+                    model="claude-3-5-haiku-20241022",
                     max_tokens=10,
                     messages=[{"role": "user", "content": intent_prompt}]
                 )
