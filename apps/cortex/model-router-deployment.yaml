@@ -27,7 +27,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              pip install --no-cache-dir fastapi uvicorn redis anthropic
+              pip install --no-cache-dir fastapi uvicorn redis anthropic requests
 
               mkdir -p /app
               cat > /app/app.py <<'EOF'
