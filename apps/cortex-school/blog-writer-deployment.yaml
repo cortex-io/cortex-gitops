@@ -41,7 +41,7 @@ spec:
           protocol: TCP
         env:
         - name: REDIS_HOST
-          value: "10.42.6.150"
+          value: "redis-queue.cortex-youtube.svc.cluster.local"
         - name: REDIS_PORT
           value: "6379"
         - name: BLOG_REPO_PATH

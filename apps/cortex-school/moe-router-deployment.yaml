@@ -43,7 +43,7 @@ spec:
           protocol: TCP
         env:
         - name: REDIS_HOST
-          value: "redis-queue.cortex.svc.cluster.local"
+          value: "redis-queue.cortex-youtube.svc.cluster.local"
         - name: REDIS_PORT
           value: "6379"
         - name: LLMD_ENDPOINT
