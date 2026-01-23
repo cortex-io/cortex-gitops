@@ -222,7 +222,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: build-youtube-school-bridge-v2
+  name: build-youtube-school-bridge-v4
   namespace: cortex
 spec:
   ttlSecondsAfterFinished: 600
@@ -247,7 +247,14 @@ spec:
             memory: 1Gi
         volumeMounts:
         - name: source
-          mountPath: /workspace
+          mountPath: /workspace/Dockerfile
+          subPath: Dockerfile
+        - name: source
+          mountPath: /workspace/app.py
+          subPath: app.py
+        - name: source
+          mountPath: /workspace/requirements.txt
+          subPath: requirements.txt
       volumes:
       - name: source
         configMap:
