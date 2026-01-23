@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kaniko-moe-chat-router-v6
+  name: kaniko-moe-chat-router-v7
   namespace: cortex-chat
 spec:
   ttlSecondsAfterFinished: 600
@@ -9,37 +9,33 @@ spec:
     spec:
       restartPolicy: Never
       initContainers:
-      - name: setup-git-credentials
-        image: busybox:1.36
+      - name: clone-repo
+        image: alpine/git:2.43.0
         command:
         - /bin/sh
         - -c
         - |
           TOKEN=$(cat /secret/token)
-          mkdir -p /root
-          echo "https://ry-ops:${TOKEN}@github.com" > /root/.git-credentials
-          chmod 600 /root/.git-credentials
-          echo "[credential]" > /root/.gitconfig
-          echo "    helper = store" >> /root/.gitconfig
+          git clone --depth 1 --branch main "https://ry-ops:${TOKEN}@github.com/ry-ops/cortex-platform.git" /workspace
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
             cpu: 100m
             memory: 128Mi
+          limits:
+            cpu: 400m
+            memory: 256Mi
         volumeMounts:
         - name: github-token
           mountPath: /secret
           readOnly: true
-        - name: git-home
-          mountPath: /root
+        - name: workspace
+          mountPath: /workspace
       containers:
       - name: kaniko
         image: gcr.io/kaniko-project/executor:latest
         args:
         - "--dockerfile=Dockerfile.simple"
-        - "--context=https://github.com/ry-ops/cortex-platform.git#refs/heads/main:/services/moe-router"
+        - "--context=/workspace/services/moe-router"
         - "--destination=10.43.170.72:5000/moe-router:latest"
         - "--insecure"
         - "--skip-tls-verify"
@@ -51,11 +47,11 @@ spec:
             cpu: 2000m
             memory: 1Gi
         volumeMounts:
-        - name: git-home
-          mountPath: /root
+        - name: workspace
+          mountPath: /workspace
       volumes:
       - name: github-token
         secret:
           secretName: github-token
-      - name: git-home
+      - name: workspace
         emptyDir: {}
