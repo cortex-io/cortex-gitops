@@ -676,7 +676,7 @@ data:
             }), 500
 
     if __name__ == '__main__':
-        logger.info(f"Starting MoE Chat Router - routing to {ORCHESTRATOR_URL}")
+        logger.info(f"Starting Cortex Chat API with {len(mcp_tools_cache)} MCP tools")
         app.run(host='0.0.0.0', port=8080, debug=True)
   chat-router.py: |
     #!/usr/bin/env python3
