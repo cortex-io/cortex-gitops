@@ -39,6 +39,8 @@ spec:
         - "--destination=10.43.170.72:5000/cortex-orchestrator:latest"
         - "--insecure"
         - "--skip-tls-verify"
+        - "--cache=true"
+        - "--cache-repo=10.43.170.72:5000/cache"
         resources:
           requests:
             cpu: 500m
