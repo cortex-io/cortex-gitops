@@ -104,9 +104,21 @@ data:
         conversations[conv_id] = []
         return jsonify({"id": conv_id, "title": f"New Conversation {conv_id}"}), 201
 
+    # System prompt for Cortex assistant
+    SYSTEM_PROMPT = """You are Cortex, an AI infrastructure assistant. You help manage and monitor:
+    - Kubernetes clusters (pods, deployments, services, nodes)
+    - Security systems (Sandfly alerts, vulnerabilities)
+    - Virtualization (Proxmox VMs and containers)
+    - Network devices (UniFi controllers)
+    - Automation workflows (n8n, Langflow)
+
+    You have access to MCP servers that can query real infrastructure data.
+    Be concise and helpful. When discussing infrastructure, provide specific details when available.
+    If you don't have access to live data, say so and suggest how to get it."""
+
     @app.route('/api/chat', methods=['POST'])
     def chat():
-        """Main chat endpoint - routes to cortex-orchestrator"""
+        """Main chat endpoint - uses Claude API directly"""
         try:
             data = request.json
             message = data.get('message', '')
@@ -122,59 +134,40 @@ data:
                 "content": message
             })
 
-            # Classify intent
-            intent_prompt = f"""Classify this user message into one of these categories:
-            - infrastructure: Kubernetes, pods, deployments, nodes, services
-            - security: Sandfly alerts, vulnerabilities, security events
-            - automation: n8n workflows, task automation
-            - general: Everything else
+            # Build conversation history for Claude
+            claude_messages = []
+            for msg in conversations[conversation_id]:
+                claude_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
 
-            User message: {message}
-
-            Respond with just the category name."""
-
+            # Call Claude API directly
             try:
-                intent_response = anthropic_client.messages.create(
-                    model="claude-3-5-haiku-20241022",
-                    max_tokens=10,
-                    messages=[{"role": "user", "content": intent_prompt}]
+                response = anthropic_client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=4096,
+                    system=SYSTEM_PROMPT,
+                    messages=claude_messages
                 )
-                expert = intent_response.content[0].text.strip().lower()
-                if expert not in ['infrastructure', 'security', 'automation', 'general']:
-                    expert = 'general'
-            except Exception as e:
-                logger.error(f"Intent classification error: {e}")
+                assistant_message = response.content[0].text
+
+                # Determine expert category for UI display
                 expert = 'general'
+                msg_lower = message.lower()
+                if any(kw in msg_lower for kw in ['pod', 'deploy', 'service', 'node', 'kubectl', 'kubernetes', 'k8s', 'cluster']):
+                    expert = 'infrastructure'
+                elif any(kw in msg_lower for kw in ['security', 'alert', 'sandfly', 'vulnerability', 'scan']):
+                    expert = 'security'
+                elif any(kw in msg_lower for kw in ['vm', 'proxmox', 'container', 'virtual']):
+                    expert = 'virtualization'
+                elif any(kw in msg_lower for kw in ['n8n', 'workflow', 'automat', 'langflow']):
+                    expert = 'automation'
 
-            logger.info(f"Classified as: {expert}")
-
-            # Route to cortex-orchestrator
-            try:
-                orch_request = {
-                    "message": message,
-                    "conversation_id": conversation_id,
-                    "expert": expert,
-                    "history": conversations[conversation_id][:-1]
-                }
-
-                response = requests.post(
-                    f"{ORCHESTRATOR_URL}/chat",
-                    json=orch_request,
-                    timeout=60
-                )
-
-                if response.status_code == 200:
-                    assistant_message = response.json().get('response', 'No response from orchestrator')
-                else:
-                    logger.error(f"Orchestrator returned {response.status_code}: {response.text}")
-                    assistant_message = f"The orchestrator is currently unavailable. Status: {response.status_code}"
-
-            except requests.exceptions.Timeout:
-                logger.error("Orchestrator timeout")
-                assistant_message = "The request timed out. Please try again."
             except Exception as e:
-                logger.error(f"Orchestrator routing error: {e}")
-                assistant_message = f"Error routing to expert: {str(e)}"
+                logger.error(f"Claude API error: {e}")
+                assistant_message = f"I'm having trouble connecting to my AI backend. Error: {str(e)}"
+                expert = 'general'
 
             # Store assistant response
             conversations[conversation_id].append({
@@ -264,11 +257,23 @@ data:
             # Cortex Fabric
             "fabric-gateway": ("http://cortex-fabric-gateway.cortex-system.svc.cluster.local:8080/health", "fabric"),
             "fabric-bridge": ("http://cortex-bridge.cortex-system.svc.cluster.local:8080/health", "fabric"),
-            # Infrastructure
-            "orchestrator": (f"{ORCHESTRATOR_URL}/health", "infrastructure"),
+            # Infrastructure (chat-related services)
             "qdrant": ("http://qdrant.cortex-chat.svc.cluster.local:6333/readyz", "infrastructure"),
-            "redis": ("http://redis.cortex-system.svc.cluster.local:6379", "infrastructure"),
+            "redis": ("http://redis.cortex-chat.svc.cluster.local:6379", "infrastructure"),
         }
+
+        # Check Claude API connectivity
+        def check_claude_api():
+            try:
+                # Quick test call to Claude API
+                response = anthropic_client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=5,
+                    messages=[{"role": "user", "content": "ping"}]
+                )
+                return {"name": "claude-api", "status": "connected", "latency_ms": None}
+            except Exception as e:
+                return {"name": "claude-api", "status": "error", "error": str(e)[:100], "latency_ms": None}
 
         results = {
             "mcp_servers": [],
@@ -283,6 +288,8 @@ data:
                 executor.submit(check_service, name, url): (name, category)
                 for name, (url, category) in services.items()
             }
+            # Also check Claude API
+            claude_future = executor.submit(check_claude_api)
 
             for future in concurrent.futures.as_completed(future_to_service):
                 name, category = future_to_service[future]
@@ -294,6 +301,9 @@ data:
                     results["cortex_fabric"].append(result)
                 elif category == "infrastructure":
                     results["infrastructure"].append(result)
+
+            # Add Claude API result to infrastructure
+            results["infrastructure"].append(claude_future.result())
 
         # Determine overall status for each category
         def get_overall_status(items):
@@ -327,10 +337,10 @@ data:
         # Cortex Fabric
         "fabric-gateway": {"namespace": "cortex-system", "deployment": "fabric-gateway"},
         "fabric-bridge": {"namespace": "cortex-system", "deployment": "cortex-bridge"},
-        # Infrastructure
-        "orchestrator": {"namespace": "cortex-system", "deployment": "cortex-orchestrator"},
+        # Infrastructure (chat-related)
         "qdrant": {"namespace": "cortex-chat", "deployment": "qdrant"},
-        "redis": {"namespace": "cortex-system", "deployment": "redis"},
+        "redis": {"namespace": "cortex-chat", "deployment": "redis"},
+        # Note: claude-api cannot be restarted - it's an external service
     }
 
     def restart_deployment(namespace, deployment_name):
