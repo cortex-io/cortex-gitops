@@ -12,5 +12,5 @@ spec:
     persistentvolumeclaims: "10"
     pods: "50"
     services: "30"
-    configmaps: "30"
+    configmaps: "40"
     secrets: "30"
