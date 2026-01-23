@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kaniko-moe-chat-router-v5
+  name: kaniko-moe-chat-router-v6
   namespace: cortex-chat
 spec:
   ttlSecondsAfterFinished: 600
@@ -39,7 +39,7 @@ spec:
         image: gcr.io/kaniko-project/executor:latest
         args:
         - "--dockerfile=Dockerfile.simple"
-        - "--context=git://github.com/ry-ops/cortex-platform.git#refs/heads/main:/services/moe-router"
+        - "--context=https://github.com/ry-ops/cortex-platform.git#refs/heads/main:/services/moe-router"
         - "--destination=10.43.170.72:5000/moe-router:latest"
         - "--insecure"
         - "--skip-tls-verify"
