@@ -232,6 +232,8 @@ data:
         """Get status of all connected services and MCP servers"""
         import concurrent.futures
 
+        import socket
+
         def check_service(name, url, timeout=3):
             try:
                 resp = requests.get(url, timeout=timeout)
@@ -247,19 +249,34 @@ data:
             except Exception as e:
                 return {"name": name, "status": "error", "error": str(e), "latency_ms": None}
 
-        # Define services to check
+        def check_redis(host, port, timeout=3):
+            """Check Redis connectivity using TCP socket"""
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                start = datetime.utcnow()
+                sock.connect((host, port))
+                latency = int((datetime.utcnow() - start).total_seconds() * 1000)
+                # Just check connection - Redis may require auth
+                # Connection success means the service is running
+                sock.close()
+                return {"name": "redis", "status": "connected", "latency_ms": latency}
+            except socket.timeout:
+                return {"name": "redis", "status": "timeout", "latency_ms": None}
+            except Exception as e:
+                return {"name": "redis", "status": "disconnected", "error": str(e)[:50], "latency_ms": None}
+
+        # Define services to check (HTTP endpoints)
         services = {
             # MCP Servers
-            "cortex-mcp": ("http://cortex-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
-            "sandfly-mcp": ("http://sandfly-mcp-server.cortex-security.svc.cluster.local:3000/health", "mcp"),
-            "proxmox-mcp": ("http://proxmox-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
-            "unifi-mcp": ("http://unifi-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "cortex-mcp": ("http://cortex-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "sandfly-mcp": ("http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "proxmox-mcp": ("http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "unifi-mcp": ("http://unifi-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
             # Cortex Fabric
-            "fabric-gateway": ("http://cortex-fabric-gateway.cortex-system.svc.cluster.local:8080/health", "fabric"),
-            "fabric-bridge": ("http://cortex-bridge.cortex-system.svc.cluster.local:8080/health", "fabric"),
+            "fabric-gateway": ("http://fabric-gateway.cortex-system.svc.cluster.local:8080/health", "fabric"),
             # Infrastructure (chat-related services)
             "qdrant": ("http://qdrant.cortex-chat.svc.cluster.local:6333/readyz", "infrastructure"),
-            "redis": ("http://redis.cortex-chat.svc.cluster.local:6379", "infrastructure"),
         }
 
         # Check Claude API connectivity
@@ -288,8 +305,9 @@ data:
                 executor.submit(check_service, name, url): (name, category)
                 for name, (url, category) in services.items()
             }
-            # Also check Claude API
+            # Also check Claude API and Redis
             claude_future = executor.submit(check_claude_api)
+            redis_future = executor.submit(check_redis, "redis.cortex-chat.svc.cluster.local", 6379)
 
             for future in concurrent.futures.as_completed(future_to_service):
                 name, category = future_to_service[future]
@@ -302,8 +320,9 @@ data:
                 elif category == "infrastructure":
                     results["infrastructure"].append(result)
 
-            # Add Claude API result to infrastructure
+            # Add Claude API and Redis results to infrastructure
             results["infrastructure"].append(claude_future.result())
+            results["infrastructure"].append(redis_future.result())
 
         # Determine overall status for each category
         def get_overall_status(items):
@@ -336,7 +355,6 @@ data:
         "unifi-mcp": {"namespace": "cortex-system", "deployment": "unifi-mcp-server"},
         # Cortex Fabric
         "fabric-gateway": {"namespace": "cortex-system", "deployment": "fabric-gateway"},
-        "fabric-bridge": {"namespace": "cortex-system", "deployment": "cortex-bridge"},
         # Infrastructure (chat-related)
         "qdrant": {"namespace": "cortex-chat", "deployment": "qdrant"},
         "redis": {"namespace": "cortex-chat", "deployment": "redis"},
