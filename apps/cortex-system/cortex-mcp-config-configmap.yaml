@@ -24,5 +24,16 @@ data:
   CHECKMK_MCP_URL: http://checkmk-mcp-server.cortex-system.svc.cluster.local:3002
   N8N_MCP_URL: http://n8n-mcp-server.cortex-system.svc.cluster.local:3005
   CLOUDFLARE_MCP_URL: http://cloudflare-mcp-server.cortex-system.svc.cluster.local:3006
+  # Additional MCP servers
+  GITHUB_MCP_URL: http://github-mcp-server.cortex-system.svc.cluster.local:3002
+  LANGFLOW_MCP_URL: http://langflow-chat-mcp-server.cortex-system.svc.cluster.local:3000
+  YOUTUBE_INGESTION_MCP_URL: http://youtube-ingestion-mcp.cortex.svc.cluster.local:3000
+  YOUTUBE_CHANNEL_MCP_URL: http://youtube-channel-mcp.cortex.svc.cluster.local:3000
+  CORTEX_SCHOOL_MCP_URL: http://cortex-school-mcp.cortex-school.svc.cluster.local:3000
+  # Telemetry settings
+  TELEMETRY_ENABLED: "true"
+  TELEMETRY_REDIS_HOST: redis.cortex-system.svc.cluster.local
+  TELEMETRY_REDIS_PORT: "6379"
+  TELEMETRY_KEY_PREFIX: "mcp:telemetry:"
   WORKER_POOL_SIZE: "10000"
   WORKER_TIMEOUT_MINUTES: "60"
