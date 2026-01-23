@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kaniko-moe-chat-router-v4
+  name: kaniko-moe-chat-router-v5
   namespace: cortex-chat
 spec:
   ttlSecondsAfterFinished: 600
@@ -16,8 +16,11 @@ spec:
         - -c
         - |
           TOKEN=$(cat /secret/token)
-          echo "https://ry-ops:${TOKEN}@github.com" > /kaniko/.git-credentials
-          chmod 600 /kaniko/.git-credentials
+          mkdir -p /root
+          echo "https://ry-ops:${TOKEN}@github.com" > /root/.git-credentials
+          chmod 600 /root/.git-credentials
+          echo "[credential]" > /root/.gitconfig
+          echo "    helper = store" >> /root/.gitconfig
         resources:
           requests:
             cpu: 50m
@@ -29,8 +32,8 @@ spec:
         - name: github-token
           mountPath: /secret
           readOnly: true
-        - name: git-credentials
-          mountPath: /kaniko
+        - name: git-home
+          mountPath: /root
       containers:
       - name: kaniko
         image: gcr.io/kaniko-project/executor:latest
@@ -48,12 +51,11 @@ spec:
             cpu: 2000m
             memory: 1Gi
         volumeMounts:
-        - name: git-credentials
-          mountPath: /kaniko/.git-credentials
-          subPath: .git-credentials
+        - name: git-home
+          mountPath: /root
       volumes:
       - name: github-token
         secret:
           secretName: github-token
-      - name: git-credentials
+      - name: git-home
         emptyDir: {}
