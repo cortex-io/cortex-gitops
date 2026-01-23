@@ -1149,10 +1149,16 @@ data:
                                     </div>
                                 </div>
 
-                                <button class="status-refresh" id="status-refresh-btn" onclick="refreshStatus()">
-                                    <span class="refresh-icon">&#x21bb;</span>
-                                    <span>Refresh Status</span>
-                                </button>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button class="status-refresh" id="status-refresh-btn" onclick="refreshStatus()" style="flex: 1;">
+                                        <span class="refresh-icon">&#x21bb;</span>
+                                        <span>Refresh</span>
+                                    </button>
+                                    <button class="status-refresh" id="restart-unhealthy-btn" onclick="restartUnhealthyServices()" style="flex: 1; border-color: var(--error-red); color: var(--error-red);">
+                                        <span>&#x26A0;</span>
+                                        <span>Restart</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </nav>
@@ -1369,7 +1375,77 @@ data:
                     itemsEl.classList.toggle('collapsed');
                 }
             }
-    
+
+            async function restartUnhealthyServices() {
+                const restartBtn = document.getElementById('restart-unhealthy-btn');
+                if (restartBtn.classList.contains('loading')) return;
+
+                if (!confirm('Restart all unhealthy services? This may cause brief service interruptions.')) {
+                    return;
+                }
+
+                restartBtn.classList.add('loading');
+                restartBtn.innerHTML = '<span class="refresh-icon">&#x21bb;</span><span>Restarting...</span>';
+
+                try {
+                    const authToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+                    const response = await fetch(`${API_BASE}/api/restart`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify({ restart_all_unhealthy: true })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.restarted && data.restarted.length > 0) {
+                        const names = data.restarted.map(s => s.name).join(', ');
+                        alert(`Restarted: ${names}\n\nServices will be back online shortly.`);
+                    } else if (data.message) {
+                        alert(data.message);
+                    } else if (data.failed && data.failed.length > 0) {
+                        const errors = data.failed.map(s => `${s.name}: ${s.error}`).join('\n');
+                        alert(`Some services failed to restart:\n${errors}`);
+                    }
+
+                    // Refresh status after a delay
+                    setTimeout(refreshStatus, 5000);
+
+                } catch (error) {
+                    console.error('Restart error:', error);
+                    alert('Failed to restart services: ' + error.message);
+                } finally {
+                    restartBtn.classList.remove('loading');
+                    restartBtn.innerHTML = '<span>&#x26A0;</span><span>Restart</span>';
+                }
+            }
+
+            async function restartService(serviceName) {
+                if (!confirm(`Restart ${serviceName}?`)) return;
+
+                try {
+                    const authToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+                    const response = await fetch(`${API_BASE}/api/restart/${serviceName}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
+
+                    const data = await response.json();
+                    if (data.restarted && data.restarted.length > 0) {
+                        alert(`${serviceName} is restarting...`);
+                        setTimeout(refreshStatus, 5000);
+                    } else {
+                        alert(`Failed to restart ${serviceName}`);
+                    }
+                } catch (error) {
+                    alert('Restart failed: ' + error.message);
+                }
+            }
+
             // Theme Management
             function loadTheme() {
                 const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
