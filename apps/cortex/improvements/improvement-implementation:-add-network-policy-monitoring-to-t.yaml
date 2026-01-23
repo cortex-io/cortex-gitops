@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-implementation:-add-network-policy-monitoring-to-t
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: monitoring
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.93"
+    cortex.ai/implemented-at: "2026-01-23T21:36:12.263160"
+data:
+  title: "Implementation: Add network policy monitoring to track blocked connections"
+  description: "Add network policy monitoring to track blocked connections"
+  implementation-notes: "Use iptables NFLOG to capture dropped packets, send to centralized logging"
+  category: monitoring
