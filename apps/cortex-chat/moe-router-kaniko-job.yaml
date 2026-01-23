@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kaniko-moe-chat-router-v3
+  name: kaniko-moe-chat-router-v4
   namespace: cortex-chat
 spec:
   ttlSecondsAfterFinished: 600
@@ -18,6 +18,13 @@ spec:
           TOKEN=$(cat /secret/token)
           echo "https://ry-ops:${TOKEN}@github.com" > /kaniko/.git-credentials
           chmod 600 /kaniko/.git-credentials
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
         volumeMounts:
         - name: github-token
           mountPath: /secret
