@@ -234,6 +234,89 @@ data:
         ]
         return jsonify(messages), 200
 
+    @app.route('/api/status', methods=['GET'])
+    def get_system_status():
+        """Get status of all connected services and MCP servers"""
+        import concurrent.futures
+
+        def check_service(name, url, timeout=3):
+            try:
+                resp = requests.get(url, timeout=timeout)
+                return {
+                    "name": name,
+                    "status": "connected" if resp.status_code == 200 else "error",
+                    "latency_ms": int(resp.elapsed.total_seconds() * 1000)
+                }
+            except requests.exceptions.Timeout:
+                return {"name": name, "status": "timeout", "latency_ms": None}
+            except requests.exceptions.ConnectionError:
+                return {"name": name, "status": "disconnected", "latency_ms": None}
+            except Exception as e:
+                return {"name": name, "status": "error", "error": str(e), "latency_ms": None}
+
+        # Define services to check
+        services = {
+            # MCP Servers
+            "cortex-mcp": ("http://cortex-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "sandfly-mcp": ("http://sandfly-mcp-server.cortex-security.svc.cluster.local:3000/health", "mcp"),
+            "proxmox-mcp": ("http://proxmox-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "unifi-mcp": ("http://unifi-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            # Cortex Fabric
+            "fabric-gateway": ("http://cortex-fabric-gateway.cortex-system.svc.cluster.local:8080/health", "fabric"),
+            "fabric-bridge": ("http://cortex-bridge.cortex-system.svc.cluster.local:8080/health", "fabric"),
+            # Infrastructure
+            "orchestrator": (f"{ORCHESTRATOR_URL}/health", "infrastructure"),
+            "qdrant": ("http://qdrant.cortex-chat.svc.cluster.local:6333/readyz", "infrastructure"),
+            "redis": ("http://redis.cortex-system.svc.cluster.local:6379", "infrastructure"),
+        }
+
+        results = {
+            "mcp_servers": [],
+            "cortex_fabric": [],
+            "infrastructure": [],
+            "mcp_call": {"status": "unknown", "last_call": None}
+        }
+
+        # Check services in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_service = {
+                executor.submit(check_service, name, url): (name, category)
+                for name, (url, category) in services.items()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_service):
+                name, category = future_to_service[future]
+                result = future.result()
+
+                if category == "mcp":
+                    results["mcp_servers"].append(result)
+                elif category == "fabric":
+                    results["cortex_fabric"].append(result)
+                elif category == "infrastructure":
+                    results["infrastructure"].append(result)
+
+        # Determine overall status for each category
+        def get_overall_status(items):
+            if not items:
+                return "unknown"
+            statuses = [item["status"] for item in items]
+            if all(s == "connected" for s in statuses):
+                return "healthy"
+            elif any(s == "connected" for s in statuses):
+                return "degraded"
+            else:
+                return "offline"
+
+        results["overall"] = {
+            "mcp_servers": get_overall_status(results["mcp_servers"]),
+            "cortex_fabric": get_overall_status(results["cortex_fabric"]),
+            "infrastructure": get_overall_status(results["infrastructure"])
+        }
+
+        results["timestamp"] = datetime.utcnow().isoformat()
+
+        return jsonify(results), 200
+
     if __name__ == '__main__':
         logger.info(f"Starting MoE Chat Router - routing to {ORCHESTRATOR_URL}")
         app.run(host='0.0.0.0', port=8080, debug=True)

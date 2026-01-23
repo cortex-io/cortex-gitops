@@ -830,6 +830,144 @@ data:
             .conversation-list.collapsed {
                 display: none;
             }
+
+            /* Status Indicators */
+            .status-section {
+                padding: 12px 16px;
+            }
+
+            .status-category {
+                margin-bottom: 16px;
+            }
+
+            .status-category-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 8px;
+                cursor: pointer;
+            }
+
+            .status-category-title {
+                font-size: 11px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                color: var(--text-tertiary);
+                text-transform: uppercase;
+            }
+
+            .status-overall {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+
+            .status-overall.healthy {
+                background: #4CAF50;
+                box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+            }
+
+            .status-overall.degraded {
+                background: #FF9800;
+                box-shadow: 0 0 6px rgba(255, 152, 0, 0.5);
+            }
+
+            .status-overall.offline {
+                background: #f44336;
+                box-shadow: 0 0 6px rgba(244, 67, 54, 0.5);
+            }
+
+            .status-overall.unknown {
+                background: #9E9E9E;
+            }
+
+            .status-items {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .status-items.collapsed {
+                display: none;
+            }
+
+            .status-item {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 6px 8px;
+                background: var(--bg-tertiary);
+                border-radius: 6px;
+                font-size: 12px;
+            }
+
+            .status-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+
+            .status-dot.connected {
+                background: #4CAF50;
+            }
+
+            .status-dot.disconnected,
+            .status-dot.timeout,
+            .status-dot.error {
+                background: #f44336;
+            }
+
+            .status-dot.unknown {
+                background: #9E9E9E;
+            }
+
+            .status-name {
+                flex: 1;
+                color: var(--text-secondary);
+            }
+
+            .status-latency {
+                font-size: 10px;
+                color: var(--text-tertiary);
+            }
+
+            .status-refresh {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                padding: 8px;
+                margin-top: 8px;
+                background: transparent;
+                border: 1px solid var(--border-subtle);
+                border-radius: 6px;
+                color: var(--text-tertiary);
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.2s;
+                width: 100%;
+            }
+
+            .status-refresh:hover {
+                background: var(--bg-tertiary);
+                color: var(--text-secondary);
+            }
+
+            .status-refresh.loading {
+                opacity: 0.6;
+                cursor: wait;
+            }
+
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+
+            .status-refresh.loading .refresh-icon {
+                animation: spin 1s linear infinite;
+            }
         </style>
     </head>
     <body>
@@ -949,53 +1087,72 @@ data:
                             </div>
                         </div>
     
-                        <!-- About Section -->
+                        <!-- System Status Section -->
                         <div class="sidebar-section">
                             <div class="sidebar-section-header">
-                                <span>ABOUT</span>
+                                <span>SYSTEM STATUS</span>
                             </div>
-                            <div style="padding: 16px 20px; color: var(--text-secondary); font-size: 13px; line-height: 1.6;">
-                                <p style="margin-bottom: 12px; font-weight: 600; color: var(--text-primary);">Chat Capabilities</p>
-    
-                                <p style="margin-bottom: 8px; font-weight: 600; font-size: 12px; color: var(--accent-orange);">Infrastructure Management</p>
-                                <ul style="margin: 0 0 12px 16px; padding: 0;">
-                                    <li style="margin-bottom: 4px;">Monitor pods, deployments & services</li>
-                                    <li style="margin-bottom: 4px;">View cluster health & node status</li>
-                                    <li style="margin-bottom: 4px;">Check resource usage & metrics</li>
-                                    <li style="margin-bottom: 4px;">Analyze logs and events</li>
-                                </ul>
-    
-                                <p style="margin-bottom: 8px; font-weight: 600; font-size: 12px; color: var(--accent-orange);">Security & Network</p>
-                                <ul style="margin: 0 0 12px 16px; padding: 0;">
-                                    <li style="margin-bottom: 4px;">Query Sandfly security alerts</li>
-                                    <li style="margin-bottom: 4px;">Monitor network policies</li>
-                                    <li style="margin-bottom: 4px;">Check UniFi devices & traffic</li>
-                                    <li style="margin-bottom: 4px;">Review security events</li>
-                                </ul>
-    
-                                <p style="margin-bottom: 8px; font-weight: 600; font-size: 12px; color: var(--accent-orange);">Virtualization</p>
-                                <ul style="margin: 0 0 12px 16px; padding: 0;">
-                                    <li style="margin-bottom: 4px;">Manage Proxmox VMs & containers</li>
-                                    <li style="margin-bottom: 4px;">Check VM status & resources</li>
-                                    <li style="margin-bottom: 4px;">Monitor hypervisor health</li>
-                                </ul>
-    
-                                <p style="margin-bottom: 8px; font-weight: 600; font-size: 12px; color: var(--accent-orange);">Task Automation</p>
-                                <ul style="margin: 0 0 12px 16px; padding: 0;">
-                                    <li style="margin-bottom: 4px;">Create async tasks via orchestrator</li>
-                                    <li style="margin-bottom: 4px;">Track task status & progress</li>
-                                    <li style="margin-bottom: 4px;">Generate infrastructure reports</li>
-                                </ul>
-    
-                                <p style="margin-bottom: 8px; font-weight: 600; font-size: 12px; color: var(--accent-orange);">Code & Development</p>
-                                <ul style="margin: 0 0 12px 16px; padding: 0;">
-                                    <li style="margin-bottom: 4px;">Full Claude Code capabilities</li>
-                                    <li style="margin-bottom: 4px;">File operations & code generation</li>
-                                    <li style="margin-bottom: 4px;">Git operations & commits</li>
-                                    <li style="margin-bottom: 4px;">Debugging & optimization</li>
-                                </ul>
-    
-                                <p style="margin: 12px 0 4px; font-size: 11px; color: var(--text-tertiary); font-style: italic;">Powered by Claude Sonnet 4.5</p>
+                            <div class="status-section" id="status-section">
+                                <!-- MCP Servers -->
+                                <div class="status-category">
+                                    <div class="status-category-header" onclick="toggleStatusCategory('mcp')">
+                                        <span class="status-category-title">MCP Servers</span>
+                                        <div class="status-overall unknown" id="mcp-overall"></div>
+                                    </div>
+                                    <div class="status-items" id="mcp-items">
+                                        <div class="status-item">
+                                            <div class="status-dot unknown"></div>
+                                            <span class="status-name">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Cortex Fabric -->
+                                <div class="status-category">
+                                    <div class="status-category-header" onclick="toggleStatusCategory('fabric')">
+                                        <span class="status-category-title">Cortex Fabric</span>
+                                        <div class="status-overall unknown" id="fabric-overall"></div>
+                                    </div>
+                                    <div class="status-items" id="fabric-items">
+                                        <div class="status-item">
+                                            <div class="status-dot unknown"></div>
+                                            <span class="status-name">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Infrastructure -->
+                                <div class="status-category">
+                                    <div class="status-category-header" onclick="toggleStatusCategory('infra')">
+                                        <span class="status-category-title">Infrastructure</span>
+                                        <div class="status-overall unknown" id="infra-overall"></div>
+                                    </div>
+                                    <div class="status-items" id="infra-items">
+                                        <div class="status-item">
+                                            <div class="status-dot unknown"></div>
+                                            <span class="status-name">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- MCP Call Status -->
+                                <div class="status-category">
+                                    <div class="status-category-header">
+                                        <span class="status-category-title">MCP Call</span>
+                                        <div class="status-overall unknown" id="mcp-call-overall"></div>
+                                    </div>
+                                    <div class="status-items" id="mcp-call-items">
+                                        <div class="status-item">
+                                            <div class="status-dot unknown" id="mcp-call-dot"></div>
+                                            <span class="status-name" id="mcp-call-status">No recent calls</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button class="status-refresh" id="status-refresh-btn" onclick="refreshStatus()">
+                                    <span class="refresh-icon">&#x21bb;</span>
+                                    <span>Refresh Status</span>
+                                </button>
                             </div>
                         </div>
                     </nav>
@@ -1093,11 +1250,124 @@ data:
             function init() {
                 loadTheme();
                 checkAuthStatus();
-    
+
                 const welcomeText = document.getElementById('welcomeText');
                 welcomeText.textContent = WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
-    
+
                 setupEventListeners();
+
+                // Start status polling
+                refreshStatus();
+                setInterval(refreshStatus, 30000); // Refresh every 30 seconds
+            }
+
+            // Status Functions
+            let statusRefreshing = false;
+
+            async function refreshStatus() {
+                if (statusRefreshing) return;
+
+                const refreshBtn = document.getElementById('status-refresh-btn');
+                if (refreshBtn) {
+                    refreshBtn.classList.add('loading');
+                    statusRefreshing = true;
+                }
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/status`);
+                    if (!response.ok) throw new Error('Failed to fetch status');
+
+                    const data = await response.json();
+                    updateStatusUI(data);
+                } catch (error) {
+                    console.error('Status fetch error:', error);
+                    // Show error state
+                    setStatusError();
+                } finally {
+                    if (refreshBtn) {
+                        refreshBtn.classList.remove('loading');
+                        statusRefreshing = false;
+                    }
+                }
+            }
+
+            function updateStatusUI(data) {
+                // Update MCP Servers
+                updateStatusCategory('mcp', data.mcp_servers, data.overall?.mcp_servers);
+
+                // Update Cortex Fabric
+                updateStatusCategory('fabric', data.cortex_fabric, data.overall?.cortex_fabric);
+
+                // Update Infrastructure
+                updateStatusCategory('infra', data.infrastructure, data.overall?.infrastructure);
+
+                // Update MCP Call status
+                const mcpCallOverall = document.getElementById('mcp-call-overall');
+                const mcpCallDot = document.getElementById('mcp-call-dot');
+                const mcpCallStatus = document.getElementById('mcp-call-status');
+
+                if (data.mcp_call) {
+                    const status = data.mcp_call.status || 'unknown';
+                    if (mcpCallOverall) {
+                        mcpCallOverall.className = 'status-overall ' + (status === 'connected' ? 'healthy' : status);
+                    }
+                    if (mcpCallDot) {
+                        mcpCallDot.className = 'status-dot ' + status;
+                    }
+                    if (mcpCallStatus) {
+                        mcpCallStatus.textContent = data.mcp_call.last_call || 'No recent calls';
+                    }
+                }
+            }
+
+            function updateStatusCategory(categoryId, items, overallStatus) {
+                const overallEl = document.getElementById(`${categoryId}-overall`);
+                const itemsEl = document.getElementById(`${categoryId}-items`);
+
+                if (overallEl) {
+                    overallEl.className = 'status-overall ' + (overallStatus || 'unknown');
+                }
+
+                if (itemsEl && items && items.length > 0) {
+                    itemsEl.innerHTML = items.map(item => `
+                        <div class="status-item">
+                            <div class="status-dot ${item.status}"></div>
+                            <span class="status-name">${item.name}</span>
+                            ${item.latency_ms ? `<span class="status-latency">${item.latency_ms}ms</span>` : ''}
+                        </div>
+                    `).join('');
+                } else if (itemsEl) {
+                    itemsEl.innerHTML = `
+                        <div class="status-item">
+                            <div class="status-dot unknown"></div>
+                            <span class="status-name">No services found</span>
+                        </div>
+                    `;
+                }
+            }
+
+            function setStatusError() {
+                ['mcp', 'fabric', 'infra'].forEach(cat => {
+                    const overallEl = document.getElementById(`${cat}-overall`);
+                    const itemsEl = document.getElementById(`${cat}-items`);
+
+                    if (overallEl) overallEl.className = 'status-overall offline';
+                    if (itemsEl) {
+                        itemsEl.innerHTML = `
+                            <div class="status-item">
+                                <div class="status-dot error"></div>
+                                <span class="status-name">Connection error</span>
+                            </div>
+                        `;
+                    }
+                });
+            }
+
+            function toggleStatusCategory(categoryId) {
+                const itemsEl = document.getElementById(`${categoryId}-items`);
+                if (itemsEl) {
+                    itemsEl.classList.toggle('collapsed');
+                }
             }
     
             // Theme Management
