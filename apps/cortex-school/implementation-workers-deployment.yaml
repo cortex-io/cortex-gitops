@@ -35,6 +35,13 @@ spec:
         component: workers
     spec:
       serviceAccountName: implementation-worker
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - name: worker
         image: 10.43.170.72:5000/cortex-implementation-worker:latest

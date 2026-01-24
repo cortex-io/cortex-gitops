@@ -34,6 +34,13 @@ spec:
         app: moe-router
         component: moe-router
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - name: router
         image: 10.43.170.72:5000/cortex-moe-router:latest

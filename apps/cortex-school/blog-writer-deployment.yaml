@@ -32,6 +32,13 @@ spec:
       labels:
         app: blog-writer
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - name: blog-writer
         image: 10.43.170.72:5000/cortex-blog-writer:latest

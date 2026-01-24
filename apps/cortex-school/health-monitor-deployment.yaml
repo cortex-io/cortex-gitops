@@ -35,6 +35,13 @@ spec:
         component: health-monitor
     spec:
       serviceAccountName: health-monitor
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - name: monitor
         image: 10.43.170.72:5000/cortex-health-monitor:latest
