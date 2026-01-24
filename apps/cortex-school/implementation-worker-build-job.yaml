@@ -39,6 +39,8 @@ spec:
         - "--destination=10.43.170.72:5000/cortex-implementation-worker:latest"
         - "--insecure"
         - "--skip-tls-verify"
+        - "--registry-mirror=10.88.145.190:30500"
+        - "--insecure-pull"
         resources:
           requests:
             cpu: 200m
