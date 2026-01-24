@@ -405,6 +405,8 @@ spec:
         - "--destination=10.43.170.72:5000/cortex-school-coordinator:latest"
         - "--insecure"
         - "--skip-tls-verify"
+        - "--registry-mirror=10.88.145.190:30500"
+        - "--insecure-pull"
         volumeMounts:
         - name: source
           mountPath: /workspace

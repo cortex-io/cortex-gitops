@@ -43,7 +43,7 @@ spec:
                 operator: DoesNotExist
       containers:
       - name: router
-        image: 10.43.170.72:5000/cortex-moe-router:latest
+        image: 10.43.170.72:5000/moe-router:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
