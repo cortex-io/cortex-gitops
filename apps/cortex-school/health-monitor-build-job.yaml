@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-health-monitor
+  namespace: cortex-school
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+      - name: clone-repo
+        image: alpine/git:2.43.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          TOKEN=$(cat /secret/token)
+          git clone --depth 1 --branch main "https://ry-ops:${TOKEN}@github.com/ry-ops/cortex-platform.git" /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: github-token
+          mountPath: /secret
+          readOnly: true
+        - name: workspace
+          mountPath: /workspace
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - "--dockerfile=Dockerfile"
+        - "--context=/workspace/services/health-monitor"
+        - "--destination=10.43.170.72:5000/cortex-health-monitor:latest"
+        - "--insecure"
+        - "--skip-tls-verify"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: github-token
+        secret:
+          secretName: github-token
+      - name: workspace
+        emptyDir: {}
+  backoffLimit: 2
