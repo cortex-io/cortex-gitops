@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from redis_client import RedisClient, ConversationStore
@@ -260,24 +261,129 @@ async def get_messages(conversation_id: str):
 # =============================================================================
 # Main Chat Endpoint
 # =============================================================================
-@app.post("/api/chat", response_model=ChatResponse)
+@app.post("/api/chat")
 async def chat(request: ChatRequest):
     """
     Main chat endpoint - the heart of the Chat Fabric Activator.
+    Returns Server-Sent Events (SSE) for streaming response to frontend.
 
     Flow:
     1. Get or create conversation
     2. Store user message
     3. Classify intent to determine routing
     4. Try fabric dispatch first, fall back to direct MCP
-    5. Store and return response
+    5. Stream response back via SSE
+    """
+    async def generate_sse():
+        try:
+            # Support both conversation_id and session_id (frontend uses session_id)
+            conversation_id = request.conversation_id or request.session_id or f"conv-{uuid.uuid4().hex[:8]}"
+            now = datetime.utcnow().isoformat() + "Z"
+
+            logger.info("chat_request",
+                        conversation_id=conversation_id,
+                        message_preview=request.message[:50])
+
+            # Get or create conversation
+            conv = await conversation_store.get_conversation(conversation_id)
+            if not conv:
+                conv = await conversation_store.create_conversation(conv_id=conversation_id)
+
+            # Store user message
+            await conversation_store.add_message(conversation_id, "user", request.message)
+            await conversation_store.update_status(conversation_id, "in_progress")
+
+            # Classify intent
+            intent = await intent_classifier.classify(request.message)
+            expert = intent.get("expert", "general")
+            target_fabric = intent.get("fabric")
+
+            logger.info("intent_classified", expert=expert, fabric=target_fabric)
+
+            # Try to dispatch to fabric
+            response_text = None
+            fabric_used = None
+            tool_calls = 0
+
+            if target_fabric and fabric_dispatcher.has_fabric(target_fabric):
+                try:
+                    # Get conversation history for context
+                    history = await conversation_store.get_messages(conversation_id)
+
+                    # Dispatch to fabric
+                    result = await fabric_dispatcher.dispatch(
+                        fabric=target_fabric,
+                        query=request.message,
+                        context={"history": history[-10:], "conversation_id": conversation_id}
+                    )
+
+                    if result.get("success"):
+                        response_text = result.get("response")
+                        fabric_used = target_fabric
+                        tool_calls = result.get("tool_calls", 0)
+                        logger.info("fabric_dispatch_success", fabric=target_fabric)
+
+                except asyncio.TimeoutError:
+                    logger.warning("fabric_dispatch_timeout", fabric=target_fabric)
+                except Exception as e:
+                    logger.error("fabric_dispatch_error", fabric=target_fabric, error=str(e))
+
+            # Fall back to direct MCP/Claude if no fabric response
+            if not response_text:
+                logger.info("using_direct_mcp_fallback")
+
+                # Get conversation history
+                history = await conversation_store.get_messages(conversation_id)
+
+                # Use MCP client with Claude
+                result = await mcp_client.chat(
+                    message=request.message,
+                    history=history[-10:],
+                    api_key=ANTHROPIC_API_KEY,
+                    model=ANTHROPIC_MODEL
+                )
+
+                response_text = result.get("response", "I'm having trouble processing that request.")
+                tool_calls = result.get("tool_calls", 0)
+
+            # Store assistant response
+            await conversation_store.add_message(conversation_id, "assistant", response_text)
+
+            # Stream the response as SSE (frontend expects this format)
+            # Send the full response as a single content_block_delta
+            yield f"data: {json.dumps({'type': 'content_block_delta', 'delta': response_text})}\n\n"
+
+            # Send completion signal
+            yield f"data: {json.dumps({'type': 'message_stop', 'conversation_id': conversation_id, 'expert': expert, 'tool_calls': tool_calls, 'fabric_used': fabric_used})}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            logger.error("chat_error", error=str(e))
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.post("/api/chat/json", response_model=ChatResponse)
+async def chat_json(request: ChatRequest):
+    """
+    Non-streaming chat endpoint for programmatic access.
+    Returns regular JSON response.
     """
     try:
         # Support both conversation_id and session_id (frontend uses session_id)
         conversation_id = request.conversation_id or request.session_id or f"conv-{uuid.uuid4().hex[:8]}"
         now = datetime.utcnow().isoformat() + "Z"
 
-        logger.info("chat_request",
+        logger.info("chat_json_request",
                     conversation_id=conversation_id,
                     message_preview=request.message[:50])
 
@@ -304,42 +410,28 @@ async def chat(request: ChatRequest):
 
         if target_fabric and fabric_dispatcher.has_fabric(target_fabric):
             try:
-                # Get conversation history for context
                 history = await conversation_store.get_messages(conversation_id)
-
-                # Dispatch to fabric
                 result = await fabric_dispatcher.dispatch(
                     fabric=target_fabric,
                     query=request.message,
                     context={"history": history[-10:], "conversation_id": conversation_id}
                 )
-
                 if result.get("success"):
                     response_text = result.get("response")
                     fabric_used = target_fabric
                     tool_calls = result.get("tool_calls", 0)
-                    logger.info("fabric_dispatch_success", fabric=target_fabric)
-
-            except asyncio.TimeoutError:
-                logger.warning("fabric_dispatch_timeout", fabric=target_fabric)
             except Exception as e:
                 logger.error("fabric_dispatch_error", fabric=target_fabric, error=str(e))
 
         # Fall back to direct MCP/Claude if no fabric response
         if not response_text:
-            logger.info("using_direct_mcp_fallback")
-
-            # Get conversation history
             history = await conversation_store.get_messages(conversation_id)
-
-            # Use MCP client with Claude
             result = await mcp_client.chat(
                 message=request.message,
                 history=history[-10:],
                 api_key=ANTHROPIC_API_KEY,
                 model=ANTHROPIC_MODEL
             )
-
             response_text = result.get("response", "I'm having trouble processing that request.")
             tool_calls = result.get("tool_calls", 0)
 
