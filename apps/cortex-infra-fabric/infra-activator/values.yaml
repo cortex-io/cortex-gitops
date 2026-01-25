@@ -1,0 +1,93 @@
+# =============================================================================
+# Infrastructure Activator - Proxmox and Kubernetes Operations
+# =============================================================================
+# Handles:
+# - Proxmox VM/container management
+# - Kubernetes cluster operations
+# - Resource monitoring and scaling
+# =============================================================================
+
+global:
+  namespace: cortex-system
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+# Minimal resources within LimitRange constraints
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "400m"
+
+initContainerResources:
+  gitSync:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  installDeps:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "400m"
+
+# -----------------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Redis Configuration
+# -----------------------------------------------------------------------------
+redis:
+  host: "redis.cortex-system.svc.cluster.local"
+  port: 6379
+  secretName: "cortex-secrets"
+  passwordKey: "redis-password"
+  streams:
+    tasks: "cortex.infra.tasks"
+    results: "cortex.results"
+    consumerGroup: "infra-activator"
+
+# -----------------------------------------------------------------------------
+# MCP Servers
+# -----------------------------------------------------------------------------
+mcpServers:
+  - name: proxmox-mcp
+    url: "http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: kubernetes-mcp
+    url: "http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001"
+
+# -----------------------------------------------------------------------------
+# Capabilities
+# -----------------------------------------------------------------------------
+capabilities:
+  - proxmox
+  - kubernetes
+  - vm_management
+  - container_management
+  - cluster_operations
+  - resource_monitoring
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  port: 9090

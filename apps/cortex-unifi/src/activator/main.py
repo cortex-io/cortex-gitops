@@ -248,19 +248,31 @@ async def handle_cortex_task(message: CortexMessage) -> dict:
     """
     Handle a task from Cortex master via Redis Streams.
 
-    Translates Cortex message format to internal query format
-    and processes via the same routing logic as HTTP requests.
+    Supports two message formats:
+    1. Chat-activator format: {task_id, query, context, source}
+    2. Legacy format: {query, site, context} in payload
     """
+    import json as _json
     start = time.time()
 
-    # Extract query from Cortex message payload
-    query = message.payload.get("query", "")
-    site = message.payload.get("site", "default")
-    context = message.payload.get("context", {})
+    # Extract query - handle both formats
+    payload = message.payload
+    query = payload.get("query", "")
+    site = payload.get("site", "default")
+    task_id = payload.get("task_id", message.message_id)
+
+    # Context might be JSON string from chat-activator
+    context = payload.get("context", {})
+    if isinstance(context, str):
+        try:
+            context = _json.loads(context)
+        except (_json.JSONDecodeError, TypeError):
+            context = {}
 
     log.info(
         "cortex_task_processing",
         task_type=message.task_type,
+        task_id=task_id,
         query=query[:100]
     )
 
@@ -272,13 +284,26 @@ async def handle_cortex_task(message: CortexMessage) -> dict:
 
     latency_ms = int((time.time() - start) * 1000)
 
+    # Build response text for chat-activator
+    if response.success and response.result:
+        if isinstance(response.result, dict):
+            response_text = response.result.get("message", response.result.get("response", str(response.result)))
+        else:
+            response_text = str(response.result)
+    elif response.error:
+        response_text = f"Error: {response.error}"
+    else:
+        response_text = "Query processed successfully"
+
     return {
         "success": response.success,
         "result": response.result,
+        "response": response_text,
         "error": response.error,
         "layers_activated": response.layers_activated,
         "cold_starts": response.cold_starts,
         "latency_ms": latency_ms,
+        "task_id": task_id,
     }
 
 

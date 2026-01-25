@@ -371,39 +371,54 @@ class CortexClient:
         success: bool,
         layers_activated: List[str] = None,
         latency_ms: int = 0,
+        task_id: str = None,
+        response_text: str = None,
     ) -> str:
-        """Publish result back to Cortex."""
+        """
+        Publish result back to Cortex.
+
+        Supports two formats:
+        1. Chat-activator format: flat fields with task_id, response, success
+        2. Legacy Cortex format: nested payload structure
+        """
         if not self._client:
             raise RuntimeError("Not connected to Redis")
 
-        result_message = CortexMessage(
-            stream=self.config.result_stream,
-            sender=self.config.agent_id,
-            recipient=original_message.sender,
-            task_type=f"{original_message.task_type}_result",
-            payload={
-                "success": success,
-                "result": result,
-                "original_task": original_message.task_type,
-                "layers_activated": layers_activated or [],
-                "latency_ms": latency_ms,
-            },
-            priority=original_message.priority,
-            metadata={
-                "original_message_id": original_message.message_id,
-                "fabric": "unifi-layer-fabric",
-            },
-        )
+        # Extract task_id from original message if not provided
+        if not task_id:
+            task_id = original_message.payload.get("task_id", original_message.message_id)
+
+        # Build response text from result if not provided
+        if not response_text and result:
+            if isinstance(result, str):
+                response_text = result
+            elif isinstance(result, dict):
+                response_text = result.get("message", result.get("response", json.dumps(result)))
+            else:
+                response_text = str(result)
+
+        # Chat-activator compatible flat format
+        result_data = {
+            "task_id": task_id,
+            "success": str(success).lower(),
+            "response": response_text or "",
+            "fabric": "unifi",
+            "tool_calls": str(len(layers_activated) if layers_activated else 0),
+            "execution_time_ms": str(latency_ms),
+            "sender": self.config.agent_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
 
         message_id = await self._client.xadd(
             self.config.result_stream,
-            result_message.to_dict(),
+            result_data,
             maxlen=10000,
         )
 
         log.info(
             "cortex_result_published",
             message_id=message_id,
+            task_id=task_id,
             success=success,
             latency_ms=latency_ms
         )

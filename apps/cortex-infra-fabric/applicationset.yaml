@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cortex-infra-fabric
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: infra-activator
+            path: apps/cortex-infra-fabric/infra-activator
+  template:
+    metadata:
+      name: "infra-fabric-{{name}}"
+      namespace: argocd
+      labels:
+        app.kubernetes.io/part-of: cortex-infra-fabric
+        cortex.ry-ops.dev/fabric: infrastructure
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ry-ops/cortex-gitops.git
+        targetRevision: HEAD
+        path: "{{path}}"
+        helm:
+          releaseName: "{{name}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: cortex-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
