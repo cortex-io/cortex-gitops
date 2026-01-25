@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-enhancement:-implement-privacy-preserving-data-gov
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: capability
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.95"
+    cortex.ai/implemented-at: "2026-01-25T14:52:58.593689"
+data:
+  title: "Enhancement: Implement privacy-preserving data governance automation for AI workloads"
+  description: "Implement privacy-preserving data governance automation for AI workloads"
+  implementation-notes: "Create Kubernetes controllers for automatic data classification and encryption, implement policy-as-code for data privacy compliance, and automate secure data lifecycle management"
+  category: capability
