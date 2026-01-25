@@ -272,7 +272,8 @@ async def chat(request: ChatRequest):
     5. Store and return response
     """
     try:
-        conversation_id = request.conversation_id or f"conv-{uuid.uuid4().hex[:8]}"
+        # Support both conversation_id and session_id (frontend uses session_id)
+        conversation_id = request.conversation_id or request.session_id or f"conv-{uuid.uuid4().hex[:8]}"
         now = datetime.utcnow().isoformat() + "Z"
 
         logger.info("chat_request",
