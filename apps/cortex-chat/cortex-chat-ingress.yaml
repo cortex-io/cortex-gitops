@@ -21,7 +21,7 @@ spec:
         pathType: Prefix
       - backend:
           service:
-            name: moe-router
+            name: chat-activator
             port:
               number: 8080
         path: /api
