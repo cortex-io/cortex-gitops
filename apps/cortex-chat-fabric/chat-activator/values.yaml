@@ -30,6 +30,24 @@ resources:
     memory: "512Mi"
     cpu: "1000m"
 
+# Init container resources (must satisfy LimitRange ratio requirements)
+# LimitRange: CPU max 4:1, Memory max 2:1
+initContainerResources:
+  gitSync:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  installDeps:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "1000m"
+
 # -----------------------------------------------------------------------------
 # Service
 # -----------------------------------------------------------------------------

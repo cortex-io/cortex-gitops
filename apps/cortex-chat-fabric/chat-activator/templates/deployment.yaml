@@ -44,6 +44,8 @@ spec:
           volumeMounts:
             - name: code
               mountPath: /code
+          resources:
+            {{- toYaml .Values.initContainerResources.gitSync | nindent 12 }}
 
         - name: install-deps
           image: python:3.11-slim
@@ -55,10 +57,12 @@ spec:
                 fastapi==0.109.0 uvicorn==0.27.0 \
                 pydantic==2.5.3 structlog==24.1.0 \
                 redis==5.0.1 anthropic==0.40.0 \
-                httpx==0.26.0 aiohttp==3.9.1
+                httpx==0.26.0 aiohttp==3.9.1 pyyaml==6.0.1
           volumeMounts:
             - name: deps
               mountPath: /deps
+          resources:
+            {{- toYaml .Values.initContainerResources.installDeps | nindent 12 }}
 
       containers:
         - name: activator
