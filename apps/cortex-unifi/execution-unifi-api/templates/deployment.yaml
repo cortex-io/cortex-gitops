@@ -24,22 +24,62 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.metrics.port }}"
     spec:
+      securityContext:
+        fsGroup: 1000
+
+      initContainers:
+        - name: git-sync
+          image: alpine/git:latest
+          command:
+            - sh
+            - -c
+            - |
+              git clone --depth 1 https://github.com/ry-ops/cortex-gitops.git /tmp/repo
+              cp /tmp/repo/apps/cortex-unifi/src/action-engine/*.py /code/ 2>/dev/null || echo "No Python files"
+          volumeMounts:
+            - name: code
+              mountPath: /code
+
+        - name: install-deps
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install --no-cache-dir --target=/deps \
+                fastapi==0.109.0 uvicorn==0.27.0 \
+                pydantic==2.5.3 httpx==0.26.0 \
+                structlog==24.1.0
+          volumeMounts:
+            - name: deps
+              mountPath: /deps
+
       containers:
         - name: action-engine
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - sh
+            - -c
+            - |
+              export PYTHONPATH=/deps:/app
+              cd /app
+              python -m uvicorn main:app --host 0.0.0.0 --port 8080
+
           ports:
             - name: http
               containerPort: 8080
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
-          
+
           env:
+            - name: PYTHONPATH
+              value: "/deps:/app"
             # Default site
             - name: UNIFI_DEFAULT_SITE
               value: {{ .Values.unifi.defaultSite | quote }}
-            
+
             {{- if .Values.unifi.siteManager.enabled }}
             # Site Manager API
             - name: UNIFI_SITE_MANAGER_ENABLED
@@ -52,7 +92,7 @@ spec:
                   name: {{ .Values.unifi.siteManager.secretName }}
                   key: {{ .Values.unifi.siteManager.secretKey }}
             {{- end }}
-            
+
             {{- if .Values.unifi.networkApi.enabled }}
             # Network API
             - name: UNIFI_NETWORK_API_ENABLED
@@ -77,7 +117,7 @@ spec:
             - name: UNIFI_TIMEOUT
               value: {{ .Values.unifi.networkApi.timeout | quote }}
             {{- end }}
-            
+
             # Telemetry
             {{- if .Values.telemetry.enabled }}
             - name: TELEMETRY_ENDPOINT
@@ -85,27 +125,37 @@ spec:
             - name: QDRANT_ENDPOINT
               value: {{ .Values.telemetry.qdrantEndpoint | quote }}
             {{- end }}
-          
+
           livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
-          
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
-          
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          
+
           volumeMounts:
+            - name: code
+              mountPath: /app
+            - name: deps
+              mountPath: /deps
             - name: config
               mountPath: /config
-          
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: 1000
-      
+
       volumes:
+        - name: code
+          emptyDir: {}
+        - name: deps
+          emptyDir: {}
         - name: config
           configMap:
             name: {{ .Release.Name }}-config
@@ -163,7 +213,7 @@ spec:
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   pollingInterval: {{ .Values.keda.pollingInterval }}
-  
+
   triggers:
     - type: prometheus
       metadata:

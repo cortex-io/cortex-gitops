@@ -24,18 +24,58 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.metrics.port }}"
     spec:
+      securityContext:
+        fsGroup: 1000
+
+      initContainers:
+        - name: git-sync
+          image: alpine/git:latest
+          command:
+            - sh
+            - -c
+            - |
+              git clone --depth 1 https://github.com/ry-ops/cortex-gitops.git /tmp/repo
+              cp /tmp/repo/apps/cortex-unifi/src/ssh-gateway/*.py /code/ 2>/dev/null || echo "No Python files"
+          volumeMounts:
+            - name: code
+              mountPath: /code
+
+        - name: install-deps
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install --no-cache-dir --target=/deps \
+                fastapi==0.109.0 uvicorn==0.27.0 \
+                pydantic==2.5.3 structlog==24.1.0 \
+                asyncssh==2.14.2
+          volumeMounts:
+            - name: deps
+              mountPath: /deps
+
       containers:
         - name: ssh-gateway
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - sh
+            - -c
+            - |
+              export PYTHONPATH=/deps:/app
+              cd /app
+              python -m uvicorn main:app --host 0.0.0.0 --port 8080
+
           ports:
             - name: http
               containerPort: 8080
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
-          
+
           env:
+            - name: PYTHONPATH
+              value: "/deps:/app"
             # SSH connection
             - name: SSH_HOST
               valueFrom:
@@ -58,27 +98,37 @@ spec:
               value: {{ .Values.ssh.timeout | quote }}
             - name: SSH_MAX_CONNECTIONS
               value: {{ .Values.ssh.maxConnections | quote }}
-          
+
           livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
-          
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
-          
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          
+
           volumeMounts:
+            - name: code
+              mountPath: /app
+            - name: deps
+              mountPath: /deps
             - name: config
               mountPath: /config
-          
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: 1000
-      
+
       volumes:
+        - name: code
+          emptyDir: {}
+        - name: deps
+          emptyDir: {}
         - name: config
           configMap:
             name: {{ .Release.Name }}-config

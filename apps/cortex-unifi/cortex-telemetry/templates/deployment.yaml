@@ -25,79 +25,109 @@ spec:
         prometheus.io/port: "{{ .Values.metrics.port }}"
         prometheus.io/path: "{{ .Values.metrics.path }}"
     spec:
+      securityContext:
+        fsGroup: 1000
+
+      initContainers:
+        - name: git-sync
+          image: alpine/git:latest
+          command:
+            - sh
+            - -c
+            - |
+              git clone --depth 1 https://github.com/ry-ops/cortex-gitops.git /tmp/repo
+              cp /tmp/repo/apps/cortex-unifi/src/telemetry/*.py /code/ 2>/dev/null || echo "No Python files"
+          volumeMounts:
+            - name: code
+              mountPath: /code
+
+        - name: install-deps
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install --no-cache-dir --target=/deps \
+                fastapi==0.109.0 uvicorn==0.27.0 \
+                pydantic==2.5.3 prometheus-client==0.19.0 \
+                structlog==24.1.0 httpx==0.26.0
+          volumeMounts:
+            - name: deps
+              mountPath: /deps
+
       containers:
         - name: telemetry
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - sh
+            - -c
+            - |
+              export PYTHONPATH=/deps:/app
+              cd /app
+              python -m uvicorn main:app --host 0.0.0.0 --port 8080
+
           ports:
             - name: http
               containerPort: 8080
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
-          
+
           env:
-            # Qdrant
+            - name: PYTHONPATH
+              value: "/deps:/app"
             - name: QDRANT_ENDPOINT
               value: {{ .Values.qdrant.endpoint | quote }}
             - name: QDRANT_COLLECTION_OPERATIONS
               value: {{ .Values.qdrant.collections.operations | quote }}
             - name: QDRANT_COLLECTION_TROUBLESHOOTING
               value: {{ .Values.qdrant.collections.troubleshooting | quote }}
-            
-            # Embedding
-            - name: EMBEDDING_MODEL
-              value: {{ .Values.qdrant.embedding.model | quote }}
-            
-            # Training
             - name: TRAINING_ENABLED
               value: {{ .Values.training.enabled | quote }}
-            - name: TRAINING_FORMAT
-              value: {{ .Values.training.format | quote }}
             - name: TRAINING_PATH
               value: {{ .Values.training.persistence.mountPath | quote }}
-            
-            # Tracing
             {{- if .Values.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.tracing.otlpEndpoint | quote }}
-            - name: OTEL_TRACES_SAMPLER_ARG
-              value: {{ .Values.tracing.sampleRate | quote }}
             {{- end }}
-          
+
           livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
-          
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
-          
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          
+
           volumeMounts:
+            - name: code
+              mountPath: /app
+            - name: deps
+              mountPath: /deps
             {{- if .Values.training.persistence.enabled }}
             - name: training-data
               mountPath: {{ .Values.training.persistence.mountPath }}
             {{- end }}
-            {{- if .Values.audit.output.file.enabled }}
-            - name: audit-logs
-              mountPath: /data/audit
-            {{- end }}
-          
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            runAsUser: 1000
-      
+
       volumes:
+        - name: code
+          emptyDir: {}
+        - name: deps
+          emptyDir: {}
         {{- if .Values.training.persistence.enabled }}
         - name: training-data
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-training
-        {{- end }}
-        {{- if .Values.audit.output.file.enabled }}
-        - name: audit-logs
-          emptyDir: {}
         {{- end }}
 
 ---
@@ -160,7 +190,7 @@ spec:
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   pollingInterval: {{ .Values.keda.pollingInterval }}
-  
+
   triggers:
     - type: prometheus
       metadata:
@@ -169,40 +199,4 @@ spec:
         query: |
           sum(cortex_activator_pending_telemetry)
         threshold: "1"
-{{- end }}
-
----
-{{- if .Values.training.export.enabled }}
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: {{ .Release.Name }}-export
-  namespace: {{ .Values.global.namespace }}
-  labels:
-    app.kubernetes.io/name: cortex-telemetry
-    app.kubernetes.io/instance: {{ .Release.Name }}
-spec:
-  schedule: {{ .Values.training.export.schedule | quote }}
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: OnFailure
-          containers:
-            - name: export
-              image: amazon/aws-cli:2.15.0
-              command:
-                - /bin/sh
-                - -c
-                - |
-                  # Export training data to cloud storage
-                  DATE=$(date +%Y-%m-%d)
-                  aws s3 sync /data/training s3://{{ .Values.training.export.destination }}/training-data/$DATE/
-              volumeMounts:
-                - name: training-data
-                  mountPath: /data/training
-          volumes:
-            - name: training-data
-              persistentVolumeClaim:
-                claimName: {{ .Release.Name }}-training
 {{- end }}
