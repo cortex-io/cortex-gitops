@@ -22,31 +22,32 @@ image:
   tag: "3.11-slim"
   pullPolicy: IfNotPresent
 
+# Minimal resources to fit in constrained cluster
 resources:
   requests:
-    memory: "256Mi"
-    cpu: "250m"
+    memory: "128Mi"
+    cpu: "100m"
   limits:
-    memory: "512Mi"
-    cpu: "1000m"
+    memory: "256Mi"
+    cpu: "400m"
 
 # Init container resources (must satisfy LimitRange ratio requirements)
 # LimitRange: CPU max 4:1, Memory max 2:1
 initContainerResources:
   gitSync:
     requests:
-      memory: "64Mi"
-      cpu: "50m"
+      memory: "32Mi"
+      cpu: "25m"
     limits:
-      memory: "128Mi"
-      cpu: "200m"
+      memory: "64Mi"
+      cpu: "100m"
   installDeps:
     requests:
-      memory: "256Mi"
-      cpu: "250m"
+      memory: "128Mi"
+      cpu: "100m"
     limits:
-      memory: "512Mi"
-      cpu: "1000m"
+      memory: "256Mi"
+      cpu: "400m"
 
 # -----------------------------------------------------------------------------
 # Service
