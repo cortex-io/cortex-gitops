@@ -70,7 +70,7 @@ spec:
           async def start_mcp_process():
               """Start the MCP server process."""
               return await asyncio.create_subprocess_exec(
-                  'python', '-m', 'cloudflare_mcp_server',
+                  'cloudflare-mcp-server',
                   stdin=asyncio.subprocess.PIPE,
                   stdout=asyncio.subprocess.PIPE,
                   stderr=asyncio.subprocess.PIPE
