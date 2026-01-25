@@ -1,0 +1,96 @@
+# =============================================================================
+# School Activator - Learning and Content Operations
+# =============================================================================
+# Handles:
+# - Learning module management
+# - Quiz generation
+# - Blog post creation
+# - Knowledge base search
+# - Content validation
+# =============================================================================
+
+global:
+  namespace: cortex-school
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "400m"
+
+initContainerResources:
+  gitSync:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  installDeps:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "400m"
+
+# -----------------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Redis Configuration
+# -----------------------------------------------------------------------------
+redis:
+  host: "redis.cortex-chat.svc.cluster.local"
+  port: 6379
+  secretName: "cortex-chat-secrets"
+  passwordKey: "redis-password"
+  streams:
+    tasks: "cortex.school.tasks"
+    results: "cortex.results"
+    consumerGroup: "school-activator"
+
+# -----------------------------------------------------------------------------
+# Anthropic API
+# -----------------------------------------------------------------------------
+anthropic:
+  secretName: "cortex-chat-secrets"
+  apiKeyKey: "anthropic-api-key"
+  model: "claude-sonnet-4-20250514"
+  maxTokens: 4096
+
+# -----------------------------------------------------------------------------
+# School Services
+# -----------------------------------------------------------------------------
+schoolServices:
+  coordinator:
+    url: "http://school-coordinator.cortex-school.svc.cluster.local:8080"
+  ragValidator:
+    url: "http://rag-validator.cortex-school.svc.cluster.local:8080"
+  blogWriter:
+    url: "http://blog-writer.cortex-school.svc.cluster.local:8080"
+  mcp:
+    url: "http://cortex-school-mcp.cortex-school.svc.cluster.local:3000"
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  port: 9090

@@ -157,6 +157,29 @@ fabrics:
       - automate
       - execute
       - trigger
+  school:
+    stream: "cortex.school.tasks"
+    capabilities:
+      - school
+      - learning
+      - module
+      - quiz
+      - blog
+      - knowledge
+      - progress
+      - validate
+      - education
+      - content
+  tailscale:
+    stream: "cortex.tailscale.tasks"
+    capabilities:
+      - tailscale
+      - vpn
+      - tailnet
+      - acl
+      - exit_node
+      - dns
+      - magicdns
 
 # -----------------------------------------------------------------------------
 # MCP Server Integration (Direct fallback)
@@ -176,6 +199,12 @@ mcpServers:
     url: "http://github-mcp-server.cortex-system.svc.cluster.local:3002"
   - name: cloudflare-mcp
     url: "http://cloudflare-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: school-mcp
+    url: "http://cortex-school-mcp.cortex-school.svc.cluster.local:3000"
+  - name: tailscale-mcp
+    url: "http://tailscale-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: n8n-mcp
+    url: "http://n8n-mcp-server.cortex-system.svc.cluster.local:3002"
 
 # -----------------------------------------------------------------------------
 # Metrics

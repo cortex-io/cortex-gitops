@@ -90,6 +90,23 @@ class IntentClassifier:
             ],
             "expert": "n8n",
             "fabric": "n8n"
+        },
+        "school": {
+            "keywords": [
+                "school", "learning", "learn", "module", "modules", "quiz",
+                "blog", "blog post", "knowledge", "progress", "validate",
+                "education", "content", "course", "tutorial", "lesson"
+            ],
+            "expert": "school",
+            "fabric": "school"
+        },
+        "tailscale": {
+            "keywords": [
+                "tailscale", "vpn", "tailnet", "acl", "exit node",
+                "magicdns", "subnet", "auth key", "device auth"
+            ],
+            "expert": "tailscale",
+            "fabric": "tailscale"
         }
     }
 
@@ -155,11 +172,13 @@ class IntentClassifier:
 - sandfly: Sandfly scans, threats, alerts, host security, compliance
 - cortex: System status, agents, fabrics, help, what can you do
 - automation: n8n workflows, automation, scheduling
+- school: Learning modules, quizzes, blog posts, knowledge base, education
+- tailscale: Tailscale VPN, tailnet, ACLs, exit nodes, MagicDNS
 - general: General conversation, greetings, or unclear intent
 
 User message: {message}
 
-Respond with ONLY one word: network, proxmox, kubernetes, github, cloudflare, sandfly, cortex, automation, or general"""
+Respond with ONLY one word: network, proxmox, kubernetes, github, cloudflare, sandfly, cortex, automation, school, tailscale, or general"""
 
         response = await self.client.messages.create(
             model="claude-3-5-haiku-20241022",
@@ -178,7 +197,9 @@ Respond with ONLY one word: network, proxmox, kubernetes, github, cloudflare, sa
             "cloudflare": {"expert": "cloudflare", "fabric": "cloudflare"},
             "sandfly": {"expert": "sandfly", "fabric": "sandfly"},
             "cortex": {"expert": "cortex", "fabric": "cortex"},
-            "automation": {"expert": "automation", "fabric": None},
+            "automation": {"expert": "n8n", "fabric": "n8n"},
+            "school": {"expert": "school", "fabric": "school"},
+            "tailscale": {"expert": "tailscale", "fabric": "tailscale"},
             "general": {"expert": "general", "fabric": None}
         }
 
