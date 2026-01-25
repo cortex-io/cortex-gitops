@@ -27,12 +27,98 @@ data:
     from http.server import HTTPServer, BaseHTTPRequestHandler
     import json
 
+    # Tool definitions for JSON-RPC
+    TOOLS = [
+        {
+            "name": "list_prs",
+            "description": "List pull requests for a repository",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository in format owner/repo"},
+                    "state": {"type": "string", "enum": ["open", "closed", "all"], "default": "open"}
+                },
+                "required": ["repo"]
+            }
+        },
+        {
+            "name": "get_pr_comments",
+            "description": "Get all review comments on a PR (including Copilot)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository in format owner/repo"},
+                    "pr_number": {"type": "integer", "description": "Pull request number"}
+                },
+                "required": ["repo", "pr_number"]
+            }
+        },
+        {
+            "name": "get_pr_reviews",
+            "description": "Get all reviews submitted on a PR",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository in format owner/repo"},
+                    "pr_number": {"type": "integer", "description": "Pull request number"}
+                },
+                "required": ["repo", "pr_number"]
+            }
+        },
+        {
+            "name": "create_pr_comment",
+            "description": "Add a comment to a PR",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository in format owner/repo"},
+                    "pr_number": {"type": "integer", "description": "Pull request number"},
+                    "body": {"type": "string", "description": "Comment body"}
+                },
+                "required": ["repo", "pr_number", "body"]
+            }
+        },
+        {
+            "name": "create_pr",
+            "description": "Create a new pull request",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository in format owner/repo"},
+                    "title": {"type": "string", "description": "PR title"},
+                    "body": {"type": "string", "description": "PR description"},
+                    "head": {"type": "string", "description": "Source branch"},
+                    "base": {"type": "string", "description": "Target branch", "default": "main"}
+                },
+                "required": ["repo", "title", "head"]
+            }
+        },
+        {
+            "name": "get_pr_files",
+            "description": "Get files changed in a PR",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository in format owner/repo"},
+                    "pr_number": {"type": "integer", "description": "Pull request number"}
+                },
+                "required": ["repo", "pr_number"]
+            }
+        }
+    ]
+
     class MCPHandler(BaseHTTPRequestHandler):
         def do_POST(self):
             content_length = int(self.headers['Content-Length'])
             body = self.rfile.read(content_length)
             request = json.loads(body)
 
+            # Check if this is a JSON-RPC request
+            if "jsonrpc" in request:
+                self.handle_jsonrpc(request)
+                return
+
+            # Legacy format: {"tool": "name", "arguments": {...}}
             tool_name = request.get("tool")
             arguments = request.get("arguments", {})
 
@@ -47,6 +133,48 @@ data:
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+        def handle_jsonrpc(self, request):
+            """Handle JSON-RPC 2.0 requests for MCP protocol."""
+            req_id = request.get("id", 1)
+            method = request.get("method", "")
+            params = request.get("params", {})
+
+            try:
+                if method == "tools/list":
+                    result = {"tools": TOOLS}
+                elif method == "tools/call":
+                    tool_name = params.get("name")
+                    arguments = params.get("arguments", {})
+                    tool_result = self.handle_tool(tool_name, arguments)
+                    result = {
+                        "content": [{"type": "text", "text": json.dumps(tool_result, indent=2)}]
+                    }
+                elif method == "initialize":
+                    result = {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "github-mcp-server", "version": "1.0.0"}
+                    }
+                else:
+                    raise ValueError(f"Unknown method: {method}")
+
+                response = {"jsonrpc": "2.0", "id": req_id, "result": result}
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response).encode())
+
+            except Exception as e:
+                error_response = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {"code": -32603, "message": str(e)}
+                }
+                self.send_response(200)  # JSON-RPC errors still use 200 status
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(error_response).encode())
 
         def do_GET(self):
             if self.path == "/health":

@@ -54,81 +54,95 @@ spec:
           pip install --no-cache-dir -e /app
           echo "Starting Cloudflare MCP Server with SSE transport on port 3000..."
 
-          # Create SSE wrapper that spawns the stdio server
-          cat > /tmp/sse-wrapper.py << 'WRAPPER_EOF'
+          # Create HTTP wrapper for JSON-RPC MCP protocol
+          cat > /tmp/mcp-wrapper.py << 'WRAPPER_EOF'
           import asyncio
           import json
-          import subprocess
           import sys
           from aiohttp import web
-          import uuid
 
-          sessions = {}
+          # Global MCP process and lock
+          mcp_proc = None
+          mcp_lock = asyncio.Lock()
+          request_counter = 0
 
-          async def handle_sse(request):
-              session_id = str(uuid.uuid4())
-              print(f"[SSE] New connection: {session_id}", file=sys.stderr, flush=True)
-
-              response = web.StreamResponse()
-              response.headers['Content-Type'] = 'text/event-stream'
-              response.headers['Cache-Control'] = 'no-cache'
-              response.headers['Connection'] = 'keep-alive'
-              response.headers['X-Accel-Buffering'] = 'no'
-              await response.prepare(request)
-
-              await response.write(f"event: endpoint\ndata: /message?sessionId={session_id}\n\n".encode())
-
-              proc = await asyncio.create_subprocess_exec(
+          async def start_mcp_process():
+              """Start the MCP server process."""
+              return await asyncio.create_subprocess_exec(
                   'python', '-m', 'cloudflare_mcp_server',
                   stdin=asyncio.subprocess.PIPE,
                   stdout=asyncio.subprocess.PIPE,
                   stderr=asyncio.subprocess.PIPE
               )
-              sessions[session_id] = {'proc': proc, 'response': response}
 
-              async def read_output():
-                  while True:
-                      line = await proc.stdout.readline()
-                      if not line:
-                          break
-                      try:
-                          json.loads(line)
-                          await response.write(f"data: {line.decode()}\n\n".encode())
-                      except:
-                          pass
+          async def send_to_mcp(request_data):
+              """Send a JSON-RPC request to MCP process and get response."""
+              global mcp_proc, request_counter
 
-              asyncio.create_task(read_output())
+              async with mcp_lock:
+                  if mcp_proc is None or mcp_proc.returncode is not None:
+                      mcp_proc = await start_mcp_process()
+                      print("[MCP] Started new MCP process", file=sys.stderr, flush=True)
 
+                  request_counter += 1
+                  request_data['id'] = request_counter
+
+                  try:
+                      mcp_proc.stdin.write((json.dumps(request_data) + '\n').encode())
+                      await mcp_proc.stdin.drain()
+
+                      # Read response with timeout
+                      line = await asyncio.wait_for(mcp_proc.stdout.readline(), timeout=30.0)
+                      if line:
+                          return json.loads(line.decode())
+                      return {"error": "No response from MCP server"}
+                  except asyncio.TimeoutError:
+                      print("[MCP] Request timed out", file=sys.stderr, flush=True)
+                      mcp_proc.terminate()
+                      mcp_proc = None
+                      return {"error": "MCP request timed out"}
+                  except Exception as e:
+                      print(f"[MCP] Error: {e}", file=sys.stderr, flush=True)
+                      return {"error": str(e)}
+
+          async def handle_jsonrpc(request):
+              """Handle JSON-RPC requests."""
               try:
-                  await asyncio.sleep(3600)
-              except asyncio.CancelledError:
-                  proc.terminate()
+                  data = await request.json()
+              except:
+                  return web.json_response(
+                      {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}, "id": None},
+                      status=200
+                  )
 
-              return response
+              method = data.get("method", "")
+              req_id = data.get("id", 1)
 
-          async def handle_message(request):
-              session_id = request.query.get('sessionId')
-              if not session_id or session_id not in sessions:
-                  return web.json_response({'error': 'Invalid session'}, status=404)
+              # Forward to MCP process
+              response = await send_to_mcp(data)
 
-              data = await request.text()
-              proc = sessions[session_id]['proc']
-              proc.stdin.write((data + '\n').encode())
-              await proc.stdin.drain()
-              return web.Response(status=200)
+              if "error" in response and not isinstance(response.get("error"), dict):
+                  return web.json_response({
+                      "jsonrpc": "2.0",
+                      "id": req_id,
+                      "error": {"code": -32603, "message": response["error"]}
+                  })
+
+              return web.json_response(response)
 
           async def handle_health(request):
               return web.json_response({'status': 'healthy', 'server': 'cloudflare-mcp'})
 
           app = web.Application()
-          app.router.add_get('/sse', handle_sse)
-          app.router.add_post('/message', handle_message)
+          app.router.add_post('/', handle_jsonrpc)
           app.router.add_get('/health', handle_health)
+
+          print("[MCP] Starting Cloudflare MCP wrapper on port 3000", file=sys.stderr, flush=True)
           web.run_app(app, host='0.0.0.0', port=3000)
           WRAPPER_EOF
 
           pip install aiohttp
-          python /tmp/sse-wrapper.py
+          python /tmp/mcp-wrapper.py
         env:
         - name: CLOUDFLARE_API_TOKEN
           valueFrom:

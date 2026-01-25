@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: cloudflare-activator
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: cortex-cloudflare-fabric
+    cortex.ry-ops.dev/layer-type: activator
+    cortex.ry-ops.dev/fabric: cloudflare
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflare-activator
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudflare-activator
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        cortex.ry-ops.dev/layer-type: activator
+        cortex.ry-ops.dev/fabric: cloudflare
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.metrics.port }}"
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      initContainers:
+        - name: git-sync
+          image: alpine/git:latest
+          command:
+            - sh
+            - -c
+            - |
+              git clone --depth 1 https://github.com/ry-ops/cortex-gitops.git /tmp/repo
+              cp /tmp/repo/apps/cortex-cloudflare-fabric/src/activator/*.py /code/ 2>/dev/null || echo "No Python files yet"
+          volumeMounts:
+            - name: code
+              mountPath: /code
+          resources:
+            {{- toYaml .Values.initContainerResources.gitSync | nindent 12 }}
+
+        - name: install-deps
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install --no-cache-dir --target=/deps \
+                fastapi==0.109.0 uvicorn==0.27.0 \
+                pydantic==2.5.3 structlog==24.1.0 \
+                redis==5.0.1 httpx==0.26.0 pyyaml==6.0.1
+          volumeMounts:
+            - name: deps
+              mountPath: /deps
+          resources:
+            {{- toYaml .Values.initContainerResources.installDeps | nindent 12 }}
+
+      containers:
+        - name: activator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: /app
+          command:
+            - sh
+            - -c
+            - |
+              export PYTHONPATH=/deps:/app
+              cd /app
+              python -m uvicorn main:app --host 0.0.0.0 --port 8080
+
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+
+          env:
+            - name: PYTHONPATH
+              value: "/deps:/app"
+            - name: FABRIC_NAME
+              value: "cloudflare"
+            - name: REDIS_HOST
+              value: {{ .Values.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.redis.port | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.secretName }}
+                  key: {{ .Values.redis.passwordKey }}
+                  optional: true
+            - name: TASK_STREAM
+              value: {{ .Values.redis.streams.tasks | quote }}
+            - name: RESULT_STREAM
+              value: {{ .Values.redis.streams.results | quote }}
+            - name: CONSUMER_GROUP
+              value: {{ .Values.redis.streams.consumerGroup | quote }}
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: code
+              mountPath: /app
+            - name: deps
+              mountPath: /deps
+            - name: config
+              mountPath: /config
+
+      volumes:
+        - name: code
+          emptyDir: {}
+        - name: deps
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: cloudflare-activator
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+  selector:
+    app.kubernetes.io/name: cloudflare-activator
+    app.kubernetes.io/instance: {{ .Release.Name }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  mcp-servers.yaml: |
+    servers:
+      {{- toYaml .Values.mcpServers | nindent 6 }}
+  capabilities.yaml: |
+    capabilities:
+      {{- toYaml .Values.capabilities | nindent 6 }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.global.namespace }}

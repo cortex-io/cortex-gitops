@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kubernetes-activator
+description: Kubernetes Fabric Activator for Cortex
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

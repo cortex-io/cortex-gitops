@@ -91,22 +91,63 @@ fabrics:
       - unifi
       - clients
       - devices
-  infrastructure:
-    stream: "cortex.infra.tasks"
+  proxmox:
+    stream: "cortex.proxmox.tasks"
     capabilities:
-      - kubernetes
-      - pods
-      - deployments
-      - nodes
       - proxmox
       - vm
-  security:
-    stream: "cortex.security.tasks"
+      - virtual_machine
+      - lxc
+      - pve
+      - storage
+  kubernetes:
+    stream: "cortex.kubernetes.tasks"
     capabilities:
-      - security
+      - kubernetes
+      - k8s
+      - pod
+      - pods
+      - deployment
+      - service
+      - ingress
+      - namespace
+  github:
+    stream: "cortex.github.tasks"
+    capabilities:
+      - github
+      - repository
+      - issues
+      - pull_requests
+      - commits
+      - branches
+      - workflows
+  cloudflare:
+    stream: "cortex.cloudflare.tasks"
+    capabilities:
+      - cloudflare
+      - dns
+      - tunnel
+      - waf
+      - firewall
+      - zones
+  sandfly:
+    stream: "cortex.sandfly.tasks"
+    capabilities:
       - sandfly
-      - vulnerability
+      - threat
+      - alerts
+      - host_security
+      - compliance
       - scan
+  cortex:
+    stream: "cortex.cortex.tasks"
+    capabilities:
+      - cortex
+      - agent
+      - fabric
+      - status
+      - help
+      - system
 
 # -----------------------------------------------------------------------------
 # MCP Server Integration (Direct fallback)

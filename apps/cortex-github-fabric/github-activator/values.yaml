@@ -1,0 +1,94 @@
+# =============================================================================
+# GitHub Activator - GitHub Repository and Issue Operations
+# =============================================================================
+# Handles:
+# - Repository management
+# - Issue and PR operations
+# - Code search and review
+# - Workflow management
+# =============================================================================
+
+global:
+  namespace: cortex-system
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+# Minimal resources within LimitRange constraints
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "400m"
+
+initContainerResources:
+  gitSync:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  installDeps:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "400m"
+
+# -----------------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Redis Configuration
+# -----------------------------------------------------------------------------
+redis:
+  host: "redis.cortex-chat.svc.cluster.local"
+  port: 6379
+  secretName: "cortex-chat-secrets"
+  passwordKey: "redis-password"
+  streams:
+    tasks: "cortex.github.tasks"
+    results: "cortex.results"
+    consumerGroup: "github-activator"
+
+# -----------------------------------------------------------------------------
+# MCP Servers
+# -----------------------------------------------------------------------------
+mcpServers:
+  - name: github-mcp
+    url: "http://github-mcp-server.cortex-system.svc.cluster.local:3002"
+
+# -----------------------------------------------------------------------------
+# Capabilities
+# -----------------------------------------------------------------------------
+capabilities:
+  - github
+  - repository
+  - issues
+  - pull_requests
+  - code_search
+  - workflows
+  - commits
+  - branches
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  port: 9090

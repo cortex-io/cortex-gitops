@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cortex-activator
+description: Cortex Fabric Activator - Meta operations for Cortex itself
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

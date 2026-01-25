@@ -1,0 +1,94 @@
+# =============================================================================
+# Kubernetes Activator - Cluster and Workload Management
+# =============================================================================
+# Handles:
+# - Pod and deployment management
+# - Service and ingress operations
+# - Namespace management
+# - Cluster status and nodes
+# =============================================================================
+
+global:
+  namespace: cortex-system
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "400m"
+
+initContainerResources:
+  gitSync:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  installDeps:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "400m"
+
+# -----------------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Redis Configuration
+# -----------------------------------------------------------------------------
+redis:
+  host: "redis.cortex-chat.svc.cluster.local"
+  port: 6379
+  secretName: "cortex-chat-secrets"
+  passwordKey: "redis-password"
+  streams:
+    tasks: "cortex.kubernetes.tasks"
+    results: "cortex.results"
+    consumerGroup: "kubernetes-activator"
+
+# -----------------------------------------------------------------------------
+# MCP Servers
+# -----------------------------------------------------------------------------
+mcpServers:
+  - name: kubernetes-mcp
+    url: "http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001"
+
+# -----------------------------------------------------------------------------
+# Capabilities
+# -----------------------------------------------------------------------------
+capabilities:
+  - kubernetes
+  - k8s
+  - pod
+  - deployment
+  - service
+  - ingress
+  - namespace
+  - node
+  - cluster
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  port: 9090
