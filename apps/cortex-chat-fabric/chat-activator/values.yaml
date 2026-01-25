@@ -1,0 +1,132 @@
+# =============================================================================
+# Chat Activator - Master Orchestrator for Cortex Chat
+# =============================================================================
+# The central hub that:
+# - Receives chat requests from frontend
+# - Routes to intent classifier
+# - Dispatches to appropriate domain fabrics (UniFi, Infrastructure, etc.)
+# - Aggregates responses back to users
+# - Manages conversation state in Redis
+# =============================================================================
+
+global:
+  namespace: cortex-chat
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "1000m"
+
+# -----------------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Redis Configuration (Conversation Storage + Fabric Communication)
+# -----------------------------------------------------------------------------
+redis:
+  host: "redis.cortex-chat.svc.cluster.local"
+  port: 6379
+  secretName: "cortex-chat-secrets"
+  passwordKey: "redis-password"
+  # Redis Streams for fabric communication
+  streams:
+    tasks: "cortex.chat.tasks"
+    results: "cortex.results"
+    consumerGroup: "chat-activator"
+
+# -----------------------------------------------------------------------------
+# Anthropic API
+# -----------------------------------------------------------------------------
+anthropic:
+  secretName: "cortex-chat-secrets"
+  apiKeyKey: "anthropic-api-key"
+  model: "claude-sonnet-4-20250514"
+  maxTokens: 4096
+
+# -----------------------------------------------------------------------------
+# Domain Fabrics (for routing)
+# -----------------------------------------------------------------------------
+fabrics:
+  unifi:
+    stream: "cortex.network.tasks"
+    capabilities:
+      - network
+      - wifi
+      - unifi
+      - clients
+      - devices
+  infrastructure:
+    stream: "cortex.infra.tasks"
+    capabilities:
+      - kubernetes
+      - pods
+      - deployments
+      - nodes
+      - proxmox
+      - vm
+  security:
+    stream: "cortex.security.tasks"
+    capabilities:
+      - security
+      - sandfly
+      - vulnerability
+      - scan
+
+# -----------------------------------------------------------------------------
+# MCP Server Integration (Direct fallback)
+# -----------------------------------------------------------------------------
+mcpServers:
+  - name: cortex-mcp
+    url: "http://cortex-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: proxmox-mcp
+    url: "http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: unifi-mcp
+    url: "http://unifi-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: sandfly-mcp
+    url: "http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000"
+  - name: kubernetes-mcp
+    url: "http://kubernetes-mcp-server.cortex-system.svc.cluster.local:3001"
+  - name: github-mcp
+    url: "http://github-mcp-server.cortex-system.svc.cluster.local:3002"
+  - name: cloudflare-mcp
+    url: "http://cloudflare-mcp-server.cortex-system.svc.cluster.local:3000"
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  port: 9090
+
+# -----------------------------------------------------------------------------
+# Ingress (disabled by default - parallel deploy with moe-router)
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: false
+  host: "chat-fabric.ry-ops.dev"
+  tlsSecret: "chat-fabric-tls"
+
+# -----------------------------------------------------------------------------
+# KEDA Scaling (optional - keep at 1 for now)
+# -----------------------------------------------------------------------------
+keda:
+  enabled: false
+  minReplicaCount: 1
+  maxReplicaCount: 3
