@@ -61,9 +61,10 @@ spec:
           import sys
           from aiohttp import web
 
-          # Global MCP process and lock
+          # Global MCP process state
           mcp_proc = None
           mcp_lock = asyncio.Lock()
+          mcp_initialized = False
           request_counter = 0
 
           async def start_mcp_process():
@@ -75,34 +76,69 @@ spec:
                   stderr=asyncio.subprocess.PIPE
               )
 
+          async def raw_send(proc, request_data):
+              """Send request and get response from MCP process."""
+              proc.stdin.write((json.dumps(request_data) + '\n').encode())
+              await proc.stdin.drain()
+              line = await asyncio.wait_for(proc.stdout.readline(), timeout=30.0)
+              if line:
+                  return json.loads(line.decode())
+              return None
+
+          async def ensure_initialized():
+              """Ensure MCP process is started and initialized."""
+              global mcp_proc, mcp_initialized, request_counter
+
+              if mcp_proc is None or mcp_proc.returncode is not None:
+                  mcp_proc = await start_mcp_process()
+                  mcp_initialized = False
+                  print("[MCP] Started new MCP process", file=sys.stderr, flush=True)
+
+              if not mcp_initialized:
+                  request_counter += 1
+                  init_request = {
+                      "jsonrpc": "2.0",
+                      "method": "initialize",
+                      "id": request_counter,
+                      "params": {
+                          "protocolVersion": "2024-11-05",
+                          "capabilities": {},
+                          "clientInfo": {"name": "cloudflare-wrapper", "version": "1.0.0"}
+                      }
+                  }
+                  response = await raw_send(mcp_proc, init_request)
+                  if response and "result" in response:
+                      mcp_initialized = True
+                      print(f"[MCP] Initialized: {response.get('result', {}).get('serverInfo', {})}", file=sys.stderr, flush=True)
+                      # Send initialized notification
+                      request_counter += 1
+                      await raw_send(mcp_proc, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+                  else:
+                      print(f"[MCP] Init failed: {response}", file=sys.stderr, flush=True)
+
           async def send_to_mcp(request_data):
               """Send a JSON-RPC request to MCP process and get response."""
-              global mcp_proc, request_counter
+              global mcp_proc, mcp_initialized, request_counter
 
               async with mcp_lock:
-                  if mcp_proc is None or mcp_proc.returncode is not None:
-                      mcp_proc = await start_mcp_process()
-                      print("[MCP] Started new MCP process", file=sys.stderr, flush=True)
-
-                  request_counter += 1
-                  request_data['id'] = request_counter
-
                   try:
-                      mcp_proc.stdin.write((json.dumps(request_data) + '\n').encode())
-                      await mcp_proc.stdin.drain()
-
-                      # Read response with timeout
-                      line = await asyncio.wait_for(mcp_proc.stdout.readline(), timeout=30.0)
-                      if line:
-                          return json.loads(line.decode())
-                      return {"error": "No response from MCP server"}
+                      await ensure_initialized()
+                      request_counter += 1
+                      request_data = dict(request_data)
+                      request_data['id'] = request_counter
+                      response = await raw_send(mcp_proc, request_data)
+                      return response if response else {"error": "No response from MCP server"}
                   except asyncio.TimeoutError:
                       print("[MCP] Request timed out", file=sys.stderr, flush=True)
-                      mcp_proc.terminate()
+                      if mcp_proc:
+                          mcp_proc.terminate()
                       mcp_proc = None
+                      mcp_initialized = False
                       return {"error": "MCP request timed out"}
                   except Exception as e:
                       print(f"[MCP] Error: {e}", file=sys.stderr, flush=True)
+                      mcp_proc = None
+                      mcp_initialized = False
                       return {"error": str(e)}
 
           async def handle_jsonrpc(request):
@@ -115,23 +151,25 @@ spec:
                       status=200
                   )
 
-              method = data.get("method", "")
               req_id = data.get("id", 1)
-
-              # Forward to MCP process
               response = await send_to_mcp(data)
+
+              if response is None:
+                  return web.json_response({
+                      "jsonrpc": "2.0", "id": req_id,
+                      "error": {"code": -32603, "message": "No response"}
+                  })
 
               if "error" in response and not isinstance(response.get("error"), dict):
                   return web.json_response({
-                      "jsonrpc": "2.0",
-                      "id": req_id,
+                      "jsonrpc": "2.0", "id": req_id,
                       "error": {"code": -32603, "message": response["error"]}
                   })
 
               return web.json_response(response)
 
           async def handle_health(request):
-              return web.json_response({'status': 'healthy', 'server': 'cloudflare-mcp'})
+              return web.json_response({'status': 'healthy', 'server': 'cloudflare-mcp', 'initialized': mcp_initialized})
 
           app = web.Application()
           app.router.add_post('/', handle_jsonrpc)
