@@ -203,10 +203,11 @@ async def create_conversation(data: ConversationCreate):
 
 @app.get("/api/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str):
-    """Get a single conversation."""
+    """Get a single conversation, auto-creating if it doesn't exist."""
     conv = await conversation_store.get_conversation(conversation_id)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        # Auto-create new conversations (frontend generates session IDs upfront)
+        conv = await conversation_store.create_conversation(conv_id=conversation_id)
     return conv
 
 
