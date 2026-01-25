@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: tailscale-mcp-server
+  name: tailscale-mcp-server
+  namespace: cortex-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tailscale-mcp-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: tailscale-mcp-server
+    spec:
+      containers:
+      - args:
+        - |
+          set -e
+          echo "Installing dependencies..."
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 pydantic>=2.0.0
+
+          echo "Copying HTTP wrapper..."
+          cp /wrapper/mcp-http-wrapper.py /repo/wrapper.py
+
+          echo "Starting Tailscale MCP HTTP Server on port 3000..."
+          python /repo/wrapper.py
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: TAILSCALE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tailscale-mcp-secrets
+              key: api-key
+        - name: TAILSCALE_TAILNET
+          valueFrom:
+            secretKeyRef:
+              name: tailscale-mcp-secrets
+              key: tailnet
+              optional: true
+        - name: MCP_COMMAND
+          value: python -m mcp_tailscale.server
+        - name: PORT
+          value: '3000'
+        image: python:3.11-slim
+        imagePullPolicy: IfNotPresent
+        name: app
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 400m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /wrapper
+          name: http-wrapper
+        workingDir: /repo
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          mkdir -p /repo/mcp_tailscale
+          cp /source-server/server.py /repo/mcp_tailscale/
+          cp /source-init/__init__.py /repo/mcp_tailscale/
+          echo "Source files copied"
+          ls -laR /repo
+        image: busybox
+        imagePullPolicy: Always
+        name: setup-source
+        resources: {}
+        volumeMounts:
+        - mountPath: /repo
+          name: repo
+        - mountPath: /source-server
+          name: source-server
+        - mountPath: /source-init
+          name: source-init
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir: {}
+        name: repo
+      - configMap:
+          name: mcp-http-wrapper
+        name: http-wrapper
+      - configMap:
+          name: tailscale-mcp-server-py
+        name: source-server
+      - configMap:
+          name: tailscale-mcp-init-py
+        name: source-init

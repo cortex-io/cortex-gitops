@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: tailscale-mcp-server
+  name: tailscale-mcp-server
+  namespace: cortex-system
+spec:
+  ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app: tailscale-mcp-server
+  type: ClusterIP
