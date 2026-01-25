@@ -83,13 +83,13 @@ class IntentClassifier:
             "expert": "cortex",
             "fabric": "cortex"
         },
-        "automation": {
+        "n8n": {
             "keywords": [
-                "n8n", "automate", "automation", "langflow",
-                "trigger", "schedule", "cron", "webhook"
+                "n8n", "automate", "automation", "workflow automation",
+                "trigger", "schedule", "cron", "webhook", "execute workflow"
             ],
-            "expert": "automation",
-            "fabric": None  # No fabric yet
+            "expert": "n8n",
+            "fabric": "n8n"
         }
     }
 

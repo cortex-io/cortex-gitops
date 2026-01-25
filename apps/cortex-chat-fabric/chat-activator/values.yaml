@@ -148,6 +148,15 @@ fabrics:
       - status
       - help
       - system
+  n8n:
+    stream: "cortex.n8n.tasks"
+    capabilities:
+      - n8n
+      - workflow
+      - automation
+      - automate
+      - execute
+      - trigger
 
 # -----------------------------------------------------------------------------
 # MCP Server Integration (Direct fallback)

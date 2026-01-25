@@ -1,0 +1,89 @@
+# =============================================================================
+# n8n Activator - Workflow Automation Operations
+# =============================================================================
+# Handles:
+# - n8n workflow management
+# - Workflow execution and monitoring
+# - Credential management
+# - Automation orchestration
+# =============================================================================
+
+global:
+  namespace: cortex-system
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "400m"
+
+initContainerResources:
+  gitSync:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  installDeps:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "400m"
+
+# -----------------------------------------------------------------------------
+# Service
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Redis Configuration
+# -----------------------------------------------------------------------------
+redis:
+  host: "redis.cortex-chat.svc.cluster.local"
+  port: 6379
+  secretName: "cortex-chat-secrets"
+  passwordKey: "redis-password"
+  streams:
+    tasks: "cortex.n8n.tasks"
+    results: "cortex.results"
+    consumerGroup: "n8n-activator"
+
+# -----------------------------------------------------------------------------
+# Anthropic API
+# -----------------------------------------------------------------------------
+anthropic:
+  secretName: "cortex-chat-secrets"
+  apiKeyKey: "anthropic-api-key"
+  model: "claude-sonnet-4-20250514"
+  maxTokens: 4096
+
+# -----------------------------------------------------------------------------
+# MCP Server
+# -----------------------------------------------------------------------------
+mcpServer:
+  name: n8n-mcp
+  url: "http://n8n-mcp-server.cortex-system.svc.cluster.local:3002"
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  port: 9090
