@@ -4,10 +4,19 @@ Cortex Activator - Query Router and Layer Orchestrator
 This is the always-on brain of the Layer Fabric. It:
 1. Receives queries from users/APIs (HTTP) OR Cortex master (Redis Streams)
 2. Routes based on keywords (fast path, no LLM)
-3. Wakes appropriate layers via KEDA
-4. Proxies requests to execution layers
-5. Handles failover (API → SSH)
-6. Reports results back to Cortex via Redis Streams
+3. **NEW: Routes based on Qdrant similarity (learned from past successes)**
+4. Wakes appropriate layers via KEDA
+5. Proxies requests to execution layers
+6. Handles failover (API → SSH)
+7. Reports results back to Cortex via Redis Streams
+8. **NEW: Stores routing decisions and outcomes for learning**
+
+Routing Cascade (exit-early):
+    Tier 0: Exact cache (TODO)
+    Tier 1: Keyword pattern match (<10ms)
+    Tier 2: Qdrant similarity search (<50ms) **NEW**
+    Tier 3: Lightweight classifier (5s cold start)
+    Tier 4: Full SLM reasoning (12s cold start)
 
 Integration modes:
 - Standalone: HTTP API only (CORTEX_ENABLED=false)
@@ -20,8 +29,9 @@ import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Tuple
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -29,6 +39,16 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest
 import structlog
 
 from cortex_integration import CortexClient, CortexConfig, CortexMessage, AgentStatus
+from qdrant_learning import (
+    QdrantLearningClient,
+    QdrantConfig,
+    RoutingDecision,
+    RoutingOutcome,
+    RouteType,
+    SimilarRoute,
+    generate_query_id,
+    generate_outcome_id,
+)
 
 # =============================================================================
 # Configuration
@@ -89,6 +109,31 @@ LAYER_STATUS = Gauge(
     ['layer']
 )
 
+# Qdrant learning metrics
+SIMILARITY_LOOKUPS = Counter(
+    'cortex_activator_similarity_lookups_total',
+    'Qdrant similarity lookups',
+    ['result']  # hit, miss, error
+)
+
+SIMILARITY_LATENCY = Histogram(
+    'cortex_activator_similarity_latency_seconds',
+    'Qdrant similarity lookup latency',
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+)
+
+ROUTING_STORED = Counter(
+    'cortex_activator_routing_stored_total',
+    'Routing decisions stored to Qdrant',
+    ['route_type']
+)
+
+OUTCOMES_STORED = Counter(
+    'cortex_activator_outcomes_stored_total',
+    'Routing outcomes stored to Qdrant',
+    ['success']
+)
+
 
 # =============================================================================
 # Models
@@ -107,6 +152,10 @@ class QueryResponse(BaseModel):
     layers_activated: list[str] = []
     latency_ms: int = 0
     cold_starts: list[str] = []
+    # Learning metadata
+    query_id: Optional[str] = None  # For tracking/feedback
+    route_type: Optional[str] = None  # keyword, similarity, classifier, slm
+    route_confidence: Optional[float] = None  # How confident we are in the routing
 
 
 class LayerState(Enum):
@@ -243,36 +292,31 @@ class QueryRouter:
 CORTEX_ENABLED = os.getenv("CORTEX_ENABLED", "true").lower() == "true"
 cortex_client: Optional[CortexClient] = None
 
+# =============================================================================
+# Qdrant Learning Integration
+# =============================================================================
+
+LEARNING_ENABLED = os.getenv("LEARNING_ENABLED", "true").lower() == "true"
+qdrant_learning: Optional[QdrantLearningClient] = None
+
 
 async def handle_cortex_task(message: CortexMessage) -> dict:
     """
     Handle a task from Cortex master via Redis Streams.
 
-    Supports two message formats:
-    1. Chat-activator format: {task_id, query, context, source}
-    2. Legacy format: {query, site, context} in payload
+    Translates Cortex message format to internal query format
+    and processes via the same routing logic as HTTP requests.
     """
-    import json as _json
     start = time.time()
 
-    # Extract query - handle both formats
-    payload = message.payload
-    query = payload.get("query", "")
-    site = payload.get("site", "default")
-    task_id = payload.get("task_id", message.message_id)
-
-    # Context might be JSON string from chat-activator
-    context = payload.get("context", {})
-    if isinstance(context, str):
-        try:
-            context = _json.loads(context)
-        except (_json.JSONDecodeError, TypeError):
-            context = {}
+    # Extract query from Cortex message payload
+    query = message.payload.get("query", "")
+    site = message.payload.get("site", "default")
+    context = message.payload.get("context", {})
 
     log.info(
         "cortex_task_processing",
         task_type=message.task_type,
-        task_id=task_id,
         query=query[:100]
     )
 
@@ -284,26 +328,13 @@ async def handle_cortex_task(message: CortexMessage) -> dict:
 
     latency_ms = int((time.time() - start) * 1000)
 
-    # Build response text for chat-activator
-    if response.success and response.result:
-        if isinstance(response.result, dict):
-            response_text = response.result.get("message", response.result.get("response", str(response.result)))
-        else:
-            response_text = str(response.result)
-    elif response.error:
-        response_text = f"Error: {response.error}"
-    else:
-        response_text = "Query processed successfully"
-
     return {
         "success": response.success,
         "result": response.result,
-        "response": response_text,
         "error": response.error,
         "layers_activated": response.layers_activated,
         "cold_starts": response.cold_starts,
         "latency_ms": latency_ms,
-        "task_id": task_id,
     }
 
 
@@ -314,9 +345,19 @@ async def handle_cortex_task(message: CortexMessage) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global cortex_client
+    global cortex_client, qdrant_learning
 
-    log.info("activator_starting", cortex_enabled=CORTEX_ENABLED)
+    log.info("activator_starting", cortex_enabled=CORTEX_ENABLED, learning_enabled=LEARNING_ENABLED)
+
+    # Initialize Qdrant learning layer
+    if LEARNING_ENABLED:
+        qdrant_config = QdrantConfig.from_env()
+        qdrant_learning = QdrantLearningClient(qdrant_config)
+        if await qdrant_learning.initialize():
+            log.info("qdrant_learning_active", url=qdrant_config.url)
+        else:
+            log.warning("qdrant_learning_failed_to_initialize")
+            qdrant_learning = None
 
     # Check initial layer states
     for layer_name in LAYERS:
@@ -341,6 +382,9 @@ async def lifespan(app: FastAPI):
 
     if cortex_client:
         await cortex_client.stop()
+
+    if qdrant_learning:
+        await qdrant_learning.close()
 
     await layer_manager.http.aclose()
     log.info("activator_shutdown_complete")
@@ -409,129 +453,228 @@ log = structlog.get_logger()
 
 async def process_query_internal(request: QueryRequest) -> QueryResponse:
     """
-    Core query processing logic.
+    Core query processing logic with learning-enabled routing cascade.
 
-    This function handles the actual routing and execution,
-    used by both HTTP endpoint and Cortex task handler.
+    Routing Cascade (exit-early):
+        Tier 1: Keyword pattern match (<10ms)
+        Tier 2: Qdrant similarity search (<50ms) - LEARNS from past successes
+        Tier 3: Lightweight classifier (5s cold start)
+        Tier 4: Full SLM reasoning (12s cold start)
+
+    After execution, stores routing decision and outcome for learning.
     """
     start = time.time()
     cold_starts = []
     layers_activated = []
+    query_id = generate_query_id()
+    route_type = None
+    route_confidence = 0.0
+    tool_selected = None
+    exec_layer = None
 
-    log.info("query_processing", query=request.query[:100])
+    log.info("query_processing", query=request.query[:100], query_id=query_id)
 
-    # Step 1: Try keyword routing (fast path)
+    # =========================================================================
+    # TIER 1: Keyword Pattern Match (fast path, <10ms)
+    # =========================================================================
     rule = query_router.classify(request.query)
 
     if rule:
-        QUERIES_TOTAL.labels(route_type="keyword", layer=f"execution-unifi-{rule.execution}").inc()
-
-        # Determine execution layer
+        route_type = RouteType.KEYWORD
+        route_confidence = 0.95  # High confidence for pattern match
+        tool_selected = rule.tool
         exec_layer = f"execution-unifi-{rule.execution}"
 
-        # Wake execution layer if needed
-        if not await layer_manager.ensure_ready(exec_layer):
-            return QueryResponse(
-                success=False,
-                error=f"Layer {exec_layer} failed to become ready",
-                latency_ms=int((time.time() - start) * 1000)
-            )
+        QUERIES_TOTAL.labels(route_type="keyword", layer=exec_layer).inc()
+        log.debug("route_tier1_keyword", tool=tool_selected, layer=exec_layer)
 
-        if layer_manager.states[exec_layer] == LayerState.WARMING:
-            cold_starts.append(exec_layer)
-        layers_activated.append(exec_layer)
-
-        # Execute the action
+    # =========================================================================
+    # TIER 2: Qdrant Similarity Search (<50ms) - Skip LLM if similar past success
+    # =========================================================================
+    if not rule and qdrant_learning:
+        similarity_start = time.time()
         try:
+            similar = await qdrant_learning.find_similar_route(request.query)
+            similarity_latency = time.time() - similarity_start
+            SIMILARITY_LATENCY.observe(similarity_latency)
+
+            if similar:
+                SIMILARITY_LOOKUPS.labels(result="hit").inc()
+                route_type = RouteType.SIMILARITY
+                route_confidence = similar.similarity * similar.success_rate
+                tool_selected = similar.tool
+                exec_layer = similar.execution_layer
+
+                QUERIES_TOTAL.labels(route_type="similarity", layer=exec_layer).inc()
+                log.info(
+                    "route_tier2_similarity",
+                    tool=tool_selected,
+                    layer=exec_layer,
+                    similarity=round(similar.similarity, 3),
+                    success_rate=round(similar.success_rate, 2),
+                    latency_ms=round(similarity_latency * 1000, 1)
+                )
+            else:
+                SIMILARITY_LOOKUPS.labels(result="miss").inc()
+        except Exception as e:
+            SIMILARITY_LOOKUPS.labels(result="error").inc()
+            log.warning("similarity_lookup_error", error=str(e))
+
+    # =========================================================================
+    # TIER 3/4: Reasoning Layers (if no keyword or similarity match)
+    # =========================================================================
+    if not exec_layer:
+        # Check if query is complex enough for full SLM
+        if query_router.needs_reasoning(request.query):
+            reasoning_layer = "reasoning-slm"
+            route_type = RouteType.SLM
+        else:
+            reasoning_layer = "reasoning-classifier"
+            route_type = RouteType.CLASSIFIER
+
+        exec_layer = reasoning_layer
+        QUERIES_TOTAL.labels(route_type=route_type.value, layer=reasoning_layer).inc()
+        log.debug("route_tier3_4_reasoning", layer=reasoning_layer)
+
+    # =========================================================================
+    # STORE ROUTING DECISION (before execution)
+    # =========================================================================
+    embedding = None
+    if qdrant_learning and route_type:
+        try:
+            # Get embedding for storage (we'll need it anyway)
+            embedding = await qdrant_learning._embedding.embed(request.query)
+
+            decision = RoutingDecision(
+                query_id=query_id,
+                query_text=request.query,
+                query_embedding=embedding,
+                route_type=route_type,
+                tool=tool_selected or "unknown",
+                execution_layer=exec_layer,
+                confidence=route_confidence,
+                metadata={
+                    "site": request.site,
+                    "context_keys": list(request.context.keys()) if request.context else [],
+                }
+            )
+            await qdrant_learning.store_routing(decision)
+            ROUTING_STORED.labels(route_type=route_type.value).inc()
+        except Exception as e:
+            log.warning("store_routing_failed", error=str(e))
+
+    # =========================================================================
+    # EXECUTE: Wake layer and run
+    # =========================================================================
+
+    # Wake execution layer if needed
+    if not await layer_manager.ensure_ready(exec_layer):
+        latency_ms = int((time.time() - start) * 1000)
+        # Store failed outcome
+        await _store_outcome(query_id, False, latency_ms, "layer_unavailable")
+        return QueryResponse(
+            success=False,
+            error=f"Layer {exec_layer} failed to become ready",
+            latency_ms=latency_ms,
+            query_id=query_id,
+            route_type=route_type.value if route_type else None,
+            route_confidence=route_confidence
+        )
+
+    if layer_manager.states[exec_layer] == LayerState.WARMING:
+        cold_starts.append(exec_layer)
+    layers_activated.append(exec_layer)
+
+    # Execute based on layer type
+    result = None
+    error = None
+    success = False
+
+    try:
+        if exec_layer.startswith("execution-unifi-"):
+            # Direct execution layer
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
                     f"{LAYERS[exec_layer].endpoint}/execute",
                     json={
-                        "tool": rule.tool,
+                        "tool": tool_selected or "unknown",
                         "query": request.query,
                         "site": request.site,
                         "context": request.context
                     }
                 )
                 result = resp.json()
-        except Exception as e:
-            log.error("execution_failed", layer=exec_layer, error=str(e))
+                success = resp.status_code == 200
+        else:
+            # Reasoning layer
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{LAYERS[exec_layer].endpoint}/v1/chat/completions",
+                    json={
+                        "messages": [
+                            {"role": "user", "content": request.query}
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 500
+                    }
+                )
+                reasoning_result = resp.json()
+                result = {"message": "Query processed via reasoning layer", "reasoning": reasoning_result}
+                success = True
+                # TODO: Parse tool call from response and execute
 
-            # Failover to SSH if API fails
-            if rule.execution == "api":
-                log.info("failover_to_ssh", original_layer=exec_layer)
-                # TODO: Implement SSH failover
-
-            return QueryResponse(
-                success=False,
-                error=str(e),
-                layers_activated=layers_activated,
-                latency_ms=int((time.time() - start) * 1000),
-                cold_starts=cold_starts
-            )
-
-        return QueryResponse(
-            success=True,
-            result=result,
-            layers_activated=layers_activated,
-            latency_ms=int((time.time() - start) * 1000),
-            cold_starts=cold_starts
-        )
-
-    # Step 2: No keyword match - need reasoning
-    QUERIES_TOTAL.labels(route_type="reasoning", layer="reasoning-slm").inc()
-
-    # Check if query is complex enough for full SLM
-    if query_router.needs_reasoning(request.query):
-        reasoning_layer = "reasoning-slm"
-    else:
-        reasoning_layer = "reasoning-classifier"
-
-    # Wake reasoning layer
-    if not await layer_manager.ensure_ready(reasoning_layer):
-        return QueryResponse(
-            success=False,
-            error=f"Layer {reasoning_layer} failed to become ready",
-            latency_ms=int((time.time() - start) * 1000)
-        )
-
-    if layer_manager.states[reasoning_layer] == LayerState.WARMING:
-        cold_starts.append(reasoning_layer)
-    layers_activated.append(reasoning_layer)
-
-    # Get tool selection from reasoning layer
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{LAYERS[reasoning_layer].endpoint}/v1/chat/completions",
-                json={
-                    "messages": [
-                        {"role": "user", "content": request.query}
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 500
-                }
-            )
-            reasoning_result = resp.json()
-            # Parse tool call from response
-            # TODO: Implement proper parsing
     except Exception as e:
-        log.error("reasoning_failed", layer=reasoning_layer, error=str(e))
-        return QueryResponse(
-            success=False,
-            error=str(e),
-            layers_activated=layers_activated,
-            latency_ms=int((time.time() - start) * 1000),
-            cold_starts=cold_starts
-        )
+        log.error("execution_failed", layer=exec_layer, error=str(e))
+        error = str(e)
+
+        # Failover to SSH if API fails
+        if exec_layer == "execution-unifi-api":
+            log.info("failover_to_ssh", original_layer=exec_layer)
+            # TODO: Implement SSH failover
+
+    latency_ms = int((time.time() - start) * 1000)
+
+    # =========================================================================
+    # STORE OUTCOME (for learning)
+    # =========================================================================
+    error_type = None if success else ("tool_error" if error else "unknown")
+    await _store_outcome(query_id, success, latency_ms, error_type)
 
     return QueryResponse(
-        success=True,
-        result={"message": "Query processed via reasoning layer"},
+        success=success,
+        result=result,
+        error=error,
         layers_activated=layers_activated,
-        latency_ms=int((time.time() - start) * 1000),
-        cold_starts=cold_starts
+        latency_ms=latency_ms,
+        cold_starts=cold_starts,
+        query_id=query_id,
+        route_type=route_type.value if route_type else None,
+        route_confidence=route_confidence
     )
+
+
+async def _store_outcome(
+    query_id: str,
+    success: bool,
+    latency_ms: int,
+    error_type: Optional[str] = None
+) -> None:
+    """Store execution outcome for learning."""
+    if not qdrant_learning:
+        return
+
+    try:
+        outcome = RoutingOutcome(
+            outcome_id=generate_outcome_id(),
+            query_id=query_id,
+            success=success,
+            latency_ms=latency_ms,
+            error_type=error_type,
+        )
+        await qdrant_learning.store_outcome(outcome)
+        OUTCOMES_STORED.labels(success=str(success).lower()).inc()
+    except Exception as e:
+        log.warning("store_outcome_failed", error=str(e))
 
 
 # =============================================================================

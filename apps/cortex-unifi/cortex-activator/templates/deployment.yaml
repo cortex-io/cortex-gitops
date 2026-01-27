@@ -54,7 +54,8 @@ spec:
               pip install --no-cache-dir --target=/deps \
                 fastapi==0.109.0 uvicorn==0.27.0 httpx==0.26.0 \
                 pydantic==2.5.3 prometheus-client==0.19.0 \
-                structlog==24.1.0 pyyaml==6.0.1 'redis>=5.0.0'
+                structlog==24.1.0 pyyaml==6.0.1 'redis>=5.0.0' \
+                'sentence-transformers>=2.2.0'
           volumeMounts:
             - name: deps
               mountPath: /deps
@@ -108,6 +109,19 @@ spec:
               value: "{{ .Values.cortex.consumerGroup }}"
             - name: HEARTBEAT_INTERVAL
               value: "{{ .Values.cortex.heartbeatInterval }}"
+            # Qdrant Learning Layer
+            - name: LEARNING_ENABLED
+              value: "{{ .Values.learning.enabled }}"
+            - name: QDRANT_URL
+              value: "{{ .Values.learning.qdrantUrl }}"
+            - name: QDRANT_COLLECTION_QUERIES
+              value: "{{ .Values.learning.collectionQueries }}"
+            - name: QDRANT_COLLECTION_OUTCOMES
+              value: "{{ .Values.learning.collectionOutcomes }}"
+            - name: SIMILARITY_THRESHOLD
+              value: "{{ .Values.learning.similarityThreshold }}"
+            - name: CONFIDENCE_THRESHOLD
+              value: "{{ .Values.learning.confidenceThreshold }}"
             {{- if .Values.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.tracing.otlpEndpoint }}

@@ -24,6 +24,22 @@ cortex:
   heartbeatInterval: 30
 
 # -----------------------------------------------------------------------------
+# Qdrant Learning Layer
+# -----------------------------------------------------------------------------
+learning:
+  # Enable adaptive query routing via Qdrant
+  enabled: true
+  # Qdrant service URL
+  qdrantUrl: "http://unifi-cortex-qdrant.cortex-unifi.svc.cluster.local:6333"
+  # Collections for learning
+  collectionQueries: "routing_queries"
+  collectionOutcomes: "routing_outcomes"
+  # Similarity threshold for route reuse (0.0-1.0)
+  similarityThreshold: "0.92"
+  # Confidence threshold for auto-routing (0.0-1.0)
+  confidenceThreshold: "0.85"
+
+# -----------------------------------------------------------------------------
 # Deployment
 # -----------------------------------------------------------------------------
 replicaCount: 2  # HA - must always be available
@@ -35,11 +51,11 @@ image:
 
 resources:
   requests:
-    memory: "64Mi"
-    cpu: "50m"
+    memory: "512Mi"   # sentence-transformers needs more memory
+    cpu: "100m"
   limits:
-    memory: "128Mi"
-    cpu: "200m"
+    memory: "1Gi"
+    cpu: "500m"
 
 # -----------------------------------------------------------------------------
 # Layer Discovery
