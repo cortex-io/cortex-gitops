@@ -30,6 +30,12 @@ spec:
       securityContext:
         fsGroup: 1000
 
+      # Allow scheduling on master nodes if workers are full
+      tolerations:
+        - key: "CriticalAddonsOnly"
+          operator: "Exists"
+          effect: "NoExecute"
+
       initContainers:
         # Fetch code from git
         - name: git-sync
