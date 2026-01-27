@@ -613,10 +613,10 @@ class QdrantLearningClient:
 # =============================================================================
 
 def generate_query_id() -> str:
-    """Generate a unique query ID."""
-    return f"q-{uuid.uuid4().hex[:12]}"
+    """Generate a unique query ID (UUID format for Qdrant compatibility)."""
+    return str(uuid.uuid4())
 
 
 def generate_outcome_id() -> str:
-    """Generate a unique outcome ID."""
-    return f"o-{uuid.uuid4().hex[:12]}"
+    """Generate a unique outcome ID (UUID format for Qdrant compatibility)."""
+    return str(uuid.uuid4())
