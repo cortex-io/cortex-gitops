@@ -814,7 +814,7 @@ async def handle_feedback(request: FeedbackRequest):
     try:
         success = await qdrant_learning.record_feedback(
             query_id=request.query_id,
-            user_feedback=user_feedback
+            feedback=user_feedback
         )
 
         if success:
