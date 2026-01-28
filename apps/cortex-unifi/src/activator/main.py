@@ -49,6 +49,16 @@ from qdrant_learning import (
     generate_query_id,
     generate_outcome_id,
 )
+from mode_switching import (
+    analyze_query,
+    score_complexity,
+    should_escalate,
+    QueryMode,
+    ComplexityLevel,
+    EscalationReason,
+    EscalationContext,
+    ModeDecision,
+)
 
 # =============================================================================
 # Configuration
@@ -140,6 +150,25 @@ FEEDBACK_RECEIVED = Counter(
     ['feedback_type']  # positive, negative, correction
 )
 
+# Mode switching metrics (Phase 4)
+MODE_DECISIONS = Counter(
+    'cortex_activator_mode_decisions_total',
+    'Query mode decisions',
+    ['mode', 'complexity']  # mode: llm/agent/hybrid, complexity: simple/moderate/complex/expert
+)
+
+COMPLEXITY_SCORES = Histogram(
+    'cortex_activator_complexity_score',
+    'Query complexity scores',
+    buckets=[10, 25, 40, 50, 60, 75, 90, 100]
+)
+
+ESCALATIONS = Counter(
+    'cortex_activator_escalations_total',
+    'Query escalations to higher modes',
+    ['reason']  # low_confidence, previous_failure, etc.
+)
+
 
 # =============================================================================
 # Models
@@ -162,6 +191,12 @@ class QueryResponse(BaseModel):
     query_id: Optional[str] = None  # For tracking/feedback
     route_type: Optional[str] = None  # keyword, similarity, classifier, slm
     route_confidence: Optional[float] = None  # How confident we are in the routing
+    # Mode switching metadata (Phase 4)
+    query_mode: Optional[str] = None  # llm, agent, hybrid
+    complexity_level: Optional[str] = None  # simple, moderate, complex, expert
+    complexity_score: Optional[int] = None  # 0-100
+    recommended_model: Optional[str] = None  # haiku, sonnet, opus
+    escalation_reason: Optional[str] = None  # If escalated, why
 
 
 class FeedbackRequest(BaseModel):
@@ -473,7 +508,12 @@ log = structlog.get_logger()
 
 async def process_query_internal(request: QueryRequest) -> QueryResponse:
     """
-    Core query processing logic with learning-enabled routing cascade.
+    Core query processing logic with learning-enabled routing cascade and mode switching.
+
+    Phase 4 Integration:
+        - Query complexity scoring determines routing approach
+        - Mode detection (LLM/Agent/Hybrid) guides execution
+        - Auto-escalation on low confidence or failure
 
     Routing Cascade (exit-early):
         Tier 1: Keyword pattern match (<10ms)
@@ -492,7 +532,32 @@ async def process_query_internal(request: QueryRequest) -> QueryResponse:
     tool_selected = None
     exec_layer = None
 
-    log.info("query_processing", query=request.query[:100], query_id=query_id)
+    # Phase 4: Analyze query complexity and determine mode
+    similar_success_rate = None
+    mode_decision = analyze_query(
+        query=request.query,
+        context=request.context,
+        similar_success_rate=similar_success_rate  # Will be populated after similarity check
+    )
+
+    # Track mode decision metrics
+    MODE_DECISIONS.labels(
+        mode=mode_decision.mode.value,
+        complexity=mode_decision.complexity.level.value
+    ).inc()
+    COMPLEXITY_SCORES.observe(mode_decision.complexity.score)
+
+    if mode_decision.escalation_reason:
+        ESCALATIONS.labels(reason=mode_decision.escalation_reason.value).inc()
+
+    log.info(
+        "query_processing",
+        query=request.query[:100],
+        query_id=query_id,
+        mode=mode_decision.mode.value,
+        complexity=mode_decision.complexity.level.value,
+        complexity_score=mode_decision.complexity.score
+    )
 
     # =========================================================================
     # TIER 1: Keyword Pattern Match (fast path, <10ms)
@@ -598,7 +663,13 @@ async def process_query_internal(request: QueryRequest) -> QueryResponse:
             latency_ms=latency_ms,
             query_id=query_id,
             route_type=route_type.value if route_type else None,
-            route_confidence=route_confidence
+            route_confidence=route_confidence,
+            # Phase 4 metadata
+            query_mode=mode_decision.mode.value,
+            complexity_level=mode_decision.complexity.level.value,
+            complexity_score=mode_decision.complexity.score,
+            recommended_model=mode_decision.recommended_model,
+            escalation_reason=mode_decision.escalation_reason.value if mode_decision.escalation_reason else None
         )
 
     if layer_manager.states[exec_layer] == LayerState.WARMING:
@@ -669,7 +740,13 @@ async def process_query_internal(request: QueryRequest) -> QueryResponse:
         cold_starts=cold_starts,
         query_id=query_id,
         route_type=route_type.value if route_type else None,
-        route_confidence=route_confidence
+        route_confidence=route_confidence,
+        # Phase 4: Mode switching metadata
+        query_mode=mode_decision.mode.value,
+        complexity_level=mode_decision.complexity.level.value,
+        complexity_score=mode_decision.complexity.score,
+        recommended_model=mode_decision.recommended_model,
+        escalation_reason=mode_decision.escalation_reason.value if mode_decision.escalation_reason else None
     )
 
 
@@ -845,6 +922,74 @@ async def handle_feedback(request: FeedbackRequest):
             accepted=False,
             message="Error recording feedback"
         )
+
+
+# =============================================================================
+# Phase 4: Query Analysis Endpoint (for testing/debugging)
+# =============================================================================
+
+class AnalyzeRequest(BaseModel):
+    """Request for query analysis without execution."""
+    query: str
+    context: Optional[dict] = None
+
+
+class AnalyzeResponse(BaseModel):
+    """Response from query analysis."""
+    query_mode: str
+    complexity_level: str
+    complexity_score: int
+    complexity_factors: dict
+    complexity_reasoning: str
+    confidence: float
+    recommended_model: Optional[str]
+    escalation_reason: Optional[str]
+    would_route_to: Optional[str]  # Predicted routing layer
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze_query_endpoint(request: AnalyzeRequest):
+    """
+    Analyze a query without executing it.
+
+    Useful for:
+    - Testing complexity scoring
+    - Understanding mode detection
+    - Debugging routing decisions
+    - Tuning thresholds
+
+    Returns detailed analysis including complexity factors and routing prediction.
+    """
+    # Analyze query
+    mode_decision = analyze_query(
+        query=request.query,
+        context=request.context
+    )
+
+    # Predict routing (without executing)
+    rule = query_router.classify(request.query)
+    would_route_to = None
+
+    if rule:
+        would_route_to = f"execution-unifi-{rule.execution} (keyword: {rule.tool})"
+    elif mode_decision.complexity.level in (ComplexityLevel.COMPLEX, ComplexityLevel.EXPERT):
+        would_route_to = "reasoning-slm"
+    elif mode_decision.mode == QueryMode.LLM:
+        would_route_to = "reasoning-classifier"
+    else:
+        would_route_to = "similarity-lookup → execution-unifi-api"
+
+    return AnalyzeResponse(
+        query_mode=mode_decision.mode.value,
+        complexity_level=mode_decision.complexity.level.value,
+        complexity_score=mode_decision.complexity.score,
+        complexity_factors=mode_decision.complexity.factors,
+        complexity_reasoning=mode_decision.complexity.reasoning,
+        confidence=mode_decision.confidence,
+        recommended_model=mode_decision.recommended_model,
+        escalation_reason=mode_decision.escalation_reason.value if mode_decision.escalation_reason else None,
+        would_route_to=would_route_to
+    )
 
 
 if __name__ == "__main__":
