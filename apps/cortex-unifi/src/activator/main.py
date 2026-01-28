@@ -134,6 +134,12 @@ OUTCOMES_STORED = Counter(
     ['success']
 )
 
+FEEDBACK_RECEIVED = Counter(
+    'cortex_activator_feedback_total',
+    'User feedback received',
+    ['feedback_type']  # positive, negative, correction
+)
+
 
 # =============================================================================
 # Models
@@ -156,6 +162,20 @@ class QueryResponse(BaseModel):
     query_id: Optional[str] = None  # For tracking/feedback
     route_type: Optional[str] = None  # keyword, similarity, classifier, slm
     route_confidence: Optional[float] = None  # How confident we are in the routing
+
+
+class FeedbackRequest(BaseModel):
+    """User feedback on a query response."""
+    query_id: str  # From QueryResponse
+    feedback: str  # "positive", "negative", "wrong_tool", "wrong_result"
+    correct_tool: Optional[str] = None  # If wrong_tool, what should it have been?
+    comment: Optional[str] = None  # Free-form feedback
+
+
+class FeedbackResponse(BaseModel):
+    """Response to feedback submission."""
+    accepted: bool
+    message: str
 
 
 class LayerState(Enum):
@@ -749,6 +769,82 @@ async def handle_query(request: QueryRequest):
     """
     log.info("http_query_received", query=request.query[:100])
     return await process_query_internal(request)
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+async def handle_feedback(request: FeedbackRequest):
+    """
+    Submit feedback on a query response to improve routing.
+
+    Feedback types:
+    - "positive": The response was helpful/correct
+    - "negative": The response was not helpful
+    - "wrong_tool": The right tool wasn't used (provide correct_tool)
+    - "wrong_result": The tool was right but result was wrong
+
+    This feedback is stored and used to:
+    1. Adjust success rates for similarity routing
+    2. Learn correct tool mappings for future queries
+    """
+    global qdrant_learning
+
+    if not qdrant_learning:
+        return FeedbackResponse(
+            accepted=False,
+            message="Learning is disabled"
+        )
+
+    # Map feedback to internal representation
+    feedback_map = {
+        "positive": "helpful",
+        "negative": "not_helpful",
+        "wrong_tool": "wrong_tool",
+        "wrong_result": "wrong_result"
+    }
+
+    if request.feedback not in feedback_map:
+        return FeedbackResponse(
+            accepted=False,
+            message=f"Invalid feedback type. Use: {list(feedback_map.keys())}"
+        )
+
+    user_feedback = feedback_map[request.feedback]
+
+    # Record the feedback
+    try:
+        success = await qdrant_learning.record_feedback(
+            query_id=request.query_id,
+            user_feedback=user_feedback
+        )
+
+        if success:
+            FEEDBACK_RECEIVED.labels(feedback_type=request.feedback).inc()
+            log.info(
+                "feedback_recorded",
+                query_id=request.query_id,
+                feedback=request.feedback,
+                correct_tool=request.correct_tool
+            )
+            return FeedbackResponse(
+                accepted=True,
+                message="Feedback recorded. Thank you!"
+            )
+        else:
+            log.warning(
+                "feedback_not_found",
+                query_id=request.query_id
+            )
+            return FeedbackResponse(
+                accepted=False,
+                message=f"Query ID {request.query_id} not found"
+            )
+
+    except Exception as e:
+        log.error("feedback_error", error=str(e), query_id=request.query_id)
+        return FeedbackResponse(
+            accepted=False,
+            message="Error recording feedback"
+        )
 
 
 if __name__ == "__main__":
