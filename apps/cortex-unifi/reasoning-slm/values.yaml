@@ -147,8 +147,8 @@ readinessProbe:
 # KEDA Scaling
 # -----------------------------------------------------------------------------
 keda:
-  enabled: true
-  
+  enabled: false
+
   # Scale to zero
   minReplicaCount: 0
   maxReplicaCount: 1

@@ -227,7 +227,7 @@ readinessProbe:
 # KEDA Scaling
 # -----------------------------------------------------------------------------
 keda:
-  enabled: true
+  enabled: false
   minReplicaCount: 0
   maxReplicaCount: 1
   cooldownPeriod: 300
