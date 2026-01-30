@@ -36,7 +36,7 @@ spec:
             - sh
             - -c
             - |
-              echo "Waiting for cortex-unified-mcp..."
+              echo "Waiting for cortex-unified..."
               until nc -z cortex-unified-mcp.cortex-system 3000; do
                 echo "Waiting..."
                 sleep 5
