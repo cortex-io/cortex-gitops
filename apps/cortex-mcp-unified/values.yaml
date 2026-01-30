@@ -7,7 +7,8 @@ image:
   pullPolicy: IfNotPresent
   tag: "fe1f866"
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-pull-secret
 nameOverride: ""
 fullnameOverride: ""
 

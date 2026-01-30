@@ -25,6 +25,8 @@ spec:
         prometheus.io/scrape: "false"
     spec:
       serviceAccountName: cortex-terminal
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       securityContext:
         fsGroup: 1000
 
