@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/ry-ops/cortex-unified
   pullPolicy: IfNotPresent
-  tag: "fe1f866"
+  tag: "a312763"
 
 imagePullSecrets:
   - name: ghcr-pull-secret
