@@ -72,6 +72,9 @@ data:
     # Simple in-memory conversation storage
     conversations = {}
 
+    # Track conversation status
+    conversation_status = {}  # conv_id -> 'active' | 'in_progress' | 'completed'
+
     # Cache for MCP tools (refreshed on startup and periodically)
     mcp_tools_cache = {}
     tool_to_server_map = {}
@@ -177,25 +180,75 @@ data:
 
     @app.route('/api/conversations', methods=['GET'])
     def get_conversations():
-        """Get all conversations"""
-        conv_list = [
-            {
-                "id": conv_id,
-                "title": f"Conversation {conv_id[:30]}..." if len(conv_id) > 30 else f"Conversation {conv_id}",
-                "lastMessage": msgs[-1]["content"] if msgs else "No messages",
-                "timestamp": "2026-01-19T00:00:00Z",
+        """Get all conversations grouped by status"""
+        now = datetime.utcnow()
+
+        active = []
+        in_progress = []
+        completed = []
+
+        for conv_id, msgs in conversations.items():
+            # Get first user message for title
+            first_user_msg = next((m for m in msgs if m["role"] == "user"), None)
+            title = first_user_msg["content"][:50] + "..." if first_user_msg and len(first_user_msg["content"]) > 50 else (first_user_msg["content"] if first_user_msg else "New Chat")
+
+            conv_data = {
+                "sessionId": conv_id,
+                "title": title,
+                "lastMessage": msgs[-1]["content"][:100] if msgs else "",
+                "createdAt": now.isoformat(),
+                "updatedAt": now.isoformat(),
                 "messageCount": len(msgs)
             }
-            for conv_id, msgs in conversations.items()
-        ]
-        return jsonify(conv_list), 200
+
+            # Determine status
+            status = conversation_status.get(conv_id, 'active')
+
+            if len(msgs) == 0:
+                active.append(conv_data)
+            elif status == 'completed':
+                completed.append(conv_data)
+            elif status == 'in_progress':
+                in_progress.append(conv_data)
+            else:
+                active.append(conv_data)
+
+        return jsonify({
+            "conversations": {
+                "active": active,
+                "in_progress": in_progress,
+                "completed": completed
+            }
+        }), 200
 
     @app.route('/api/conversations', methods=['POST'])
     def create_conversation():
         """Create new conversation"""
         conv_id = f"conv-{len(conversations) + 1}"
         conversations[conv_id] = []
-        return jsonify({"id": conv_id, "title": f"New Conversation {conv_id}"}), 201
+        conversation_status[conv_id] = 'active'
+        return jsonify({"id": conv_id, "sessionId": conv_id, "title": f"New Conversation {conv_id}"}), 201
+
+    @app.route('/api/conversations/<conversation_id>/status', methods=['PATCH'])
+    def update_conversation_status(conversation_id):
+        """Update conversation status (active, in_progress, completed)"""
+        data = request.json or {}
+        new_status = data.get('status', 'active')
+
+        if new_status not in ['active', 'in_progress', 'completed']:
+            return jsonify({"error": "Invalid status. Must be active, in_progress, or completed"}), 400
+
+        conversation_status[conversation_id] = new_status
+        return jsonify({"sessionId": conversation_id, "status": new_status}), 200
+
+    @app.route('/api/conversations/<conversation_id>', methods=['DELETE'])
+    def delete_conversation(conversation_id):
+        """Delete a conversation"""
+        if conversation_id in conversations:
+            del conversations[conversation_id]
+        if conversation_id in conversation_status:
+            del conversation_status[conversation_id]
+        return jsonify({"deleted": conversation_id}), 200
 
     # System prompt for Cortex assistant
     SYSTEM_PROMPT = """You are Cortex, an AI infrastructure assistant with direct access to MCP (Model Context Protocol) servers that can query real infrastructure data.
