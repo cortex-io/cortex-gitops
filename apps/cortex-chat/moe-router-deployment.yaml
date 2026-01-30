@@ -952,8 +952,6 @@ spec:
         app: moe-router
     spec:
       serviceAccountName: moe-router
-      nodeSelector:
-        kubernetes.io/hostname: k3s-worker04
       securityContext:
         fsGroup: 1000
         runAsNonRoot: true
