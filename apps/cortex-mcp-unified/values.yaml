@@ -1,6 +1,6 @@
 # Cortex Unified MCP Server Helm Values
 
-replicaCount: 2
+replicaCount: 1
 
 image:
   repository: ghcr.io/ry-ops/cortex-unified-mcp
@@ -125,7 +125,7 @@ readinessProbe:
 
 # Pod disruption budget
 podDisruptionBudget:
-  enabled: true
+  enabled: false
   minAvailable: 1
 
 # Network policy (optional)
