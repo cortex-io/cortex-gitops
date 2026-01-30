@@ -61,11 +61,11 @@ spec:
               value: /var/run/secrets/kubernetes.io/serviceaccount/token
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "250m"
+              memory: "256Mi"
+              cpu: "100m"
             limits:
-              memory: "2Gi"
-              cpu: "2000m"
+              memory: "1Gi"
+              cpu: "1000m"
           volumeMounts:
             - name: home-data
               mountPath: /home/cortex
