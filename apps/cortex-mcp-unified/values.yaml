@@ -109,7 +109,7 @@ config:
 livenessProbe:
   httpGet:
     path: /health
-    port: health
+    port: mcp
   initialDelaySeconds: 10
   periodSeconds: 30
   timeoutSeconds: 5
@@ -118,7 +118,7 @@ livenessProbe:
 readinessProbe:
   httpGet:
     path: /ready
-    port: health
+    port: mcp
   initialDelaySeconds: 5
   periodSeconds: 10
   timeoutSeconds: 5

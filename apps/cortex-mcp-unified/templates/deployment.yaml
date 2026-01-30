@@ -35,9 +35,6 @@ spec:
             - name: mcp
               containerPort: 3000
               protocol: TCP
-            - name: health
-              containerPort: 8080
-              protocol: TCP
           env:
             # Chat Layer Fabric
             - name: CHAT_ACTIVATOR_URL
