@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   annotations:
     argocd.argoproj.io/tracking-id: cortex-system:apps/Deployment:cortex-system/unifi-mcp-server
-    deployment.kubernetes.io/revision: '22'
   labels:
     app: unifi-mcp-server
   name: unifi-mcp-server
@@ -22,9 +21,6 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      annotations:
-        kubectl.kubernetes.io/restartedAt: '2026-01-03T21:07:46Z'
-      creationTimestamp: null
       labels:
         app: unifi-mcp-server
     spec:
@@ -32,8 +28,7 @@ spec:
       - args:
         - 'set -e
 
-          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 pyunifi>=2.0.0 pydantic>=2.0.0
-          python-dotenv>=1.0.0 requests>=2.0.0
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 pydantic>=2.0.0 requests>=2.0.0
 
           cp /wrapper/mcp-http-wrapper.py /app/wrapper.py
 
@@ -46,27 +41,12 @@ spec:
         - /bin/bash
         - -c
         env:
-        - name: UNIFI_HOST
-          value: 10.88.140.144
-        - name: UNIFI_USERNAME
-          value: api-local
-        - name: UNIFI_PASSWORD
-          value: H9sV51HqdwgPQfhe*vB$vx3teeUe12
-        - name: UNIFI_PORT
-          value: '443'
-        - name: UNIFI_GATEWAY_HOST
-          value: 10.88.140.144
-        - name: UNIFI_GATEWAY_PORT
-          value: '443'
-        - name: UNIFI_API_KEY
-          value: pWaYDpDS2bS7BcIHLuFPjCk_FYMdX9ii
-        - name: UNIFI_SITEMGR_BASE
+        # UI.com Cloud API - THE ONLY API
+        - name: UNIFI_API_BASE
           value: https://api.ui.com
-        - name: UNIFI_SITEMGR_PREFIX
-          value: /v1
-        - name: UNIFI_VERIFY_TLS
-          value: 'false'
-        - name: UNIFI_SITEMGR_TOKEN
+        - name: UNIFI_API_VERSION
+          value: v1
+        - name: UNIFI_API_KEY
           value: pWaYDpDS2bS7BcIHLuFPjCk_FYMdX9ii
         image: python:3.11-slim
         imagePullPolicy: IfNotPresent
@@ -117,7 +97,6 @@ spec:
           name: http-wrapper
         workingDir: /app
       dnsPolicy: ClusterFirst
-      hostNetwork: true
       initContainers:
       - args:
         - clone
@@ -125,29 +104,6 @@ spec:
         - --
         - https://github.com/ry-ops/unifi-mcp-server.git
         - /repo
-        env:
-        - name: UNIFI_HOST
-          value: 10.88.140.144
-        - name: UNIFI_USERNAME
-          value: api-local
-        - name: UNIFI_PASSWORD
-          value: H9sV51HqdwgPQfhe*vB$vx3teeUe12
-        - name: UNIFI_GATEWAY_HOST
-          value: 10.88.140.144
-        - name: UNIFI_GATEWAY_PORT
-          value: '443'
-        - name: UNIFI_API_KEY
-          value: pWaYDpDS2bS7BcIHLuFPjCk_FYMdX9ii
-        - name: UNIFI_PORT
-          value: '443'
-        - name: UNIFI_SITEMGR_BASE
-          value: https://api.ui.com
-        - name: UNIFI_SITEMGR_PREFIX
-          value: /v1
-        - name: UNIFI_VERIFY_TLS
-          value: 'false'
-        - name: UNIFI_SITEMGR_TOKEN
-          value: pWaYDpDS2bS7BcIHLuFPjCk_FYMdX9ii
         image: alpine/git
         imagePullPolicy: Always
         name: git-clone
@@ -161,15 +117,6 @@ spec:
         - cp
         - /fixed/main.py
         - /repo/main.py
-        env:
-        - name: UNIFI_SITEMGR_BASE
-          value: https://api.ui.com
-        - name: UNIFI_SITEMGR_PREFIX
-          value: /v1
-        - name: UNIFI_VERIFY_TLS
-          value: 'false'
-        - name: UNIFI_SITEMGR_TOKEN
-          value: pWaYDpDS2bS7BcIHLuFPjCk_FYMdX9ii
         image: busybox
         imagePullPolicy: Always
         name: copy-fixed-code

@@ -28,6 +28,7 @@ from redis_client import RedisClient, ConversationStore
 from fabric_dispatcher import FabricDispatcher
 from mcp_client import MCPClient
 from intent_classifier import IntentClassifier
+from fabric_status import is_greeting, get_greeting_response
 
 # Configure structured logging
 structlog.configure(
@@ -293,6 +294,23 @@ async def chat(request: ChatRequest):
             await conversation_store.add_message(conversation_id, "user", request.message)
             await conversation_store.update_status(conversation_id, "in_progress")
 
+            # Check for greeting first - return Fabric Layer status
+            if is_greeting(request.message):
+                logger.info("greeting_detected", message=request.message[:50])
+                response_text = await get_greeting_response(fabric_dispatcher, mcp_client)
+                expert = "cortex"
+                tool_calls = 0
+                fabric_used = "status"
+
+                # Store assistant response
+                await conversation_store.add_message(conversation_id, "assistant", response_text)
+
+                # Stream the response as SSE
+                yield f"data: {json.dumps({'type': 'content_block_delta', 'delta': response_text})}\n\n"
+                yield f"data: {json.dumps({'type': 'message_stop', 'conversation_id': conversation_id, 'expert': expert, 'tool_calls': tool_calls, 'fabric_used': fabric_used})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             # Classify intent
             intent = await intent_classifier.classify(request.message)
             expert = intent.get("expert", "general")
@@ -395,6 +413,20 @@ async def chat_json(request: ChatRequest):
         # Store user message
         await conversation_store.add_message(conversation_id, "user", request.message)
         await conversation_store.update_status(conversation_id, "in_progress")
+
+        # Check for greeting first - return Fabric Layer status
+        if is_greeting(request.message):
+            logger.info("greeting_detected_json", message=request.message[:50])
+            response_text = await get_greeting_response(fabric_dispatcher, mcp_client)
+            await conversation_store.add_message(conversation_id, "assistant", response_text)
+            return ChatResponse(
+                response=response_text,
+                conversation_id=conversation_id,
+                expert="cortex",
+                tool_calls=0,
+                fabric_used="status",
+                timestamp=now
+            )
 
         # Classify intent
         intent = await intent_classifier.classify(request.message)

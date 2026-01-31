@@ -1,1929 +1,401 @@
 apiVersion: v1
-data:
-  main.py: "# main.py\n# UniFi MCP Server — Integration + Legacy + Access + Protect
-    (+ Site Manager stubs)\n# - Rich resources for reads, curated tools for safe actions,
-    prompt playbooks\n# - Dual-mode auth (API key first; fall back to legacy cookie
-    where needed)\n# - Includes health alias (health://unifi) and debug_registry tool\n#
-    - Safer URL building to avoid line-wrap identifier breaks\n# - Enhanced status
-    management and list hosts functionality\n# - SECURITY: SSRF protection with URL
-    validation\n\nfrom typing import Any, Dict, List, Optional\nfrom datetime import
-    datetime, timedelta\nfrom dataclasses import dataclass\nfrom urllib.parse import
-    urlparse\nimport ipaddress\nimport os, json, requests, urllib3\nfrom pathlib import
-    Path\nfrom mcp.server.fastmcp import FastMCP\n\nurllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\n\n#
-    ========= Load Environment Variables from secrets.env =========\ndef load_env_file(env_file:
-    str = \"secrets.env\"):\n    \"\"\"Load environment variables from a .env file\"\"\"\n
-    \   env_path = Path(env_file)\n    if env_path.exists():\n        print(f\"\U0001F4C4
-    Loading environment from: {env_path.absolute()}\")\n        with open(env_path,
-    'r') as f:\n            for line_num, line in enumerate(f, 1):\n                line
-    = line.strip()\n                # Skip empty lines and comments\n                if
-    not line or line.startswith('#'):\n                    continue\n                \n
-    \               # Parse KEY=VALUE format\n                if '=' in line:\n                    key,
-    value = line.split('=', 1)\n                    key = key.strip()\n                    value
-    = value.strip()\n                    \n                    # Remove quotes if
-    present\n                    if (value.startswith('\"') and value.endswith('\"'))
-    or \\\n                       (value.startswith(\"'\") and value.endswith(\"'\")):\n
-    \                       value = value[1:-1]\n                    \n                    #
-    Set environment variable if not already set\n                    if key not in
-    os.environ:\n                        os.environ[key] = value\n                        print(f\"
-    \ ✓ Loaded: {key}\")\n                    else:\n                        print(f\"
-    \ ⚠️  Skipped {key} (already set in environment)\")\n                else:\n                    print(f\"
-    \ ⚠️  Invalid format on line {line_num}: {line}\")\n    else:\n        print(f\"⚠️
-    \ Environment file not found: {env_path.absolute()}\")\n        print(\"   Create
-    secrets.env with your UniFi credentials\")\n\n# Load environment variables first\nload_env_file()\n\n#
-    ========= Configuration =========\nUNIFI_API_KEY   = os.getenv(\"UNIFI_API_KEY\",
-    \"API\")\nUNIFI_HOST      = os.getenv(\"UNIFI_GATEWAY_HOST\", \"HOST\")\nUNIFI_PORT
-    \     = os.getenv(\"UNIFI_GATEWAY_PORT\", \"443\")\nVERIFY_TLS      = os.getenv(\"UNIFI_VERIFY_TLS\",
-    \"false\").lower() in (\"1\", \"true\", \"yes\")\n\n# Legacy credentials (optional;
-    enable for config endpoints not in Integration API)\nLEGACY_USER     = os.getenv(\"UNIFI_USERNAME\",
-    \"USERNAME\")\nLEGACY_PASS     = os.getenv(\"UNIFI_PASSWORD\", \"PASSWORD\")\n\n#
-    Site Manager (cloud) — PRIMARY API (api.ui.com)\nSM_BASE         = os.getenv(\"UNIFI_SITEMGR_BASE\",
-    \"https://api.ui.com\").rstrip(\"/\")\nSM_TOKEN        = os.getenv(\"UNIFI_SITEMGR_TOKEN\",
-    \"\")\n\n# Failover local controller address\nFAILOVER_HOST   = os.getenv(\"UNIFI_FAILOVER_HOST\",
-    \"10.88.140.144\")\nFAILOVER_PORT   = os.getenv(\"UNIFI_FAILOVER_PORT\", \"443\")\n\n#
-    API mode: \"cloud\" (primary) or \"local\" (failover)\nAPI_MODE        = os.getenv(\"UNIFI_API_MODE\",
-    \"cloud\")\n\n# Base URLs\nNET_INTEGRATION_BASE = f\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/network/integrations/v1\"\nLEGACY_BASE
-    \         = f\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/network/api\"\nACCESS_BASE
-    \         = f\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/access/api/v1\"\nPROTECT_BASE
-    \        = f\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/protect/api\"\n\nREQUEST_TIMEOUT_S
-    \   = int(os.getenv(\"UNIFI_TIMEOUT_S\", \"15\"))\n\nmcp = FastMCP(\"unifi\")\n\n#
-    ========= Security: URL Validation (SSRF Protection) =========\nclass UniFiHTTPError(RuntimeError):\n
-    \   pass\n\n# Allowed hosts for SSRF protection\nALLOWED_HOSTS = {\n    UNIFI_HOST,\n
-    \   \"api.ui.com\",  # For cloud API\n    FAILOVER_HOST,  # Local failover controller\n}\n\n#
-    Add any additional allowed hosts from environment\nif SM_BASE:\n    sm_host =
-    urlparse(SM_BASE).hostname\n    if sm_host:\n        ALLOWED_HOSTS.add(sm_host)\n\ndef
-    validate_url(url: str, purpose: str = \"request\") -> str:\n    \"\"\"\n    Validate
-    URL to prevent SSRF attacks.\n    Only allows requests to configured UniFi hosts.\n
-    \   \"\"\"\n    try:\n        parsed = urlparse(url)\n        \n        # Must
-    have scheme and netloc\n        if not parsed.scheme or not parsed.netloc:\n            raise
-    UniFiHTTPError(f\"Invalid URL for {purpose}: missing scheme or host\")\n        \n
-    \       # Only allow https (or http for local development)\n        if parsed.scheme
-    not in (\"https\", \"http\"):\n            raise UniFiHTTPError(f\"Invalid URL
-    scheme for {purpose}: {parsed.scheme}\")\n        \n        # Extract hostname
-    (remove port if present)\n        hostname = parsed.hostname\n        if not hostname:\n
-    \           raise UniFiHTTPError(f\"Invalid URL for {purpose}: cannot extract
-    hostname\")\n        \n        # Check if hostname is in allowed list\n        if
-    hostname not in ALLOWED_HOSTS:\n            raise UniFiHTTPError(\n                f\"URL
-    host not allowed for {purpose}: {hostname}. \"\n                f\"Allowed hosts:
-    {', '.join(ALLOWED_HOSTS)}\"\n            )\n        \n        # Additional check:
-    prevent requests to private IP ranges if using IP\n        try:\n            ip
-    = ipaddress.ip_address(hostname)\n            # Allow only if it's the configured
-    UNIFI_HOST\n            if hostname != UNIFI_HOST:\n                raise UniFiHTTPError(\n
-    \                   f\"Direct IP access not allowed for {purpose}: {hostname}\"\n
-    \               )\n        except ValueError:\n            # Not an IP address,
-    which is fine\n            pass\n        \n        return url\n        \n    except
-    Exception as e:\n        if isinstance(e, UniFiHTTPError):\n            raise\n
-    \       raise UniFiHTTPError(f\"URL validation failed for {purpose}: {str(e)}\")\n\n#
-    ========= HTTP helpers (with SSRF protection) =========\ndef _raise_for(r: requests.Response)
-    -> Dict[str, Any]:\n    try:\n        r.raise_for_status()\n        return r.json()
-    if r.text.strip() else {}\n    except requests.exceptions.HTTPError as e:\n        body
-    = (r.text or \"\")[:800]\n        raise UniFiHTTPError(f\"{r.request.method} {r.url}
-    -> {r.status_code} {r.reason}; body: {body}\") from e\n\ndef _h_key() -> Dict[str,
-    str]:\n    return {\"X-API-Key\": UNIFI_API_KEY, \"Content-Type\": \"application/json\"}\n\ndef
-    _get(url: str, headers: Dict[str, str], params=None, timeout=REQUEST_TIMEOUT_S)
-    -> Dict[str, Any]:\n    validated_url = validate_url(url, \"GET request\")\n    return
-    _raise_for(requests.get(validated_url, headers=headers, params=params, verify=VERIFY_TLS,
-    timeout=timeout))\n\ndef _post(url: str, headers: Dict[str, str], body=None, timeout=REQUEST_TIMEOUT_S)
-    -> Dict[str, Any]:\n    validated_url = validate_url(url, \"POST request\")\n
-    \   return _raise_for(requests.post(validated_url, headers=headers, json=body,
-    verify=VERIFY_TLS, timeout=timeout))\n\n# Legacy session (cookie auth)\nLEGACY
-    = requests.Session()\n\ndef legacy_login():\n    if not (LEGACY_USER and LEGACY_PASS):\n
-    \       raise UniFiHTTPError(\"Legacy login requires UNIFI_USERNAME and UNIFI_PASSWORD.\")\n\n
-    \   # Clear any existing session cookies to avoid 403 when re-authenticating\n
-    \   # The UniFi controller rejects login attempts if already authenticated\n    LEGACY.cookies.clear()\n\n
-    \   login_url = f\"https://{UNIFI_HOST}:{UNIFI_PORT}/api/auth/login\"\n    validated_url
-    = validate_url(login_url, \"legacy login\")\n\n    # Match curl headers exactly
-    to avoid User-Agent blocking\n    headers = {\n        \"User-Agent\": \"curl/8.5.0\",\n
-    \       \"Accept\": \"application/json\",\n        \"Content-Type\": \"application/json\"\n
-    \   }\n\n    # Debug logging\n    import sys\n    print(f\"[DEBUG] Login URL:
-    {validated_url}\", file=sys.stderr)\n    print(f\"[DEBUG] Headers: {headers}\",
-    file=sys.stderr)\n    print(f\"[DEBUG] Username: {LEGACY_USER}\", file=sys.stderr)\n
-    \   print(f\"[DEBUG] Session cookies before (after clear): {dict(LEGACY.cookies)}\",
-    file=sys.stderr)\n\n    r = LEGACY.post(\n        validated_url,\n        json={\"username\":
-    LEGACY_USER, \"password\": LEGACY_PASS},\n        headers=headers,\n        verify=VERIFY_TLS,\n
-    \       timeout=REQUEST_TIMEOUT_S,\n    )\n\n    print(f\"[DEBUG] Response status:
-    {r.status_code}\", file=sys.stderr)\n    print(f\"[DEBUG] Response headers: {dict(r.headers)}\",
-    file=sys.stderr)\n    print(f\"[DEBUG] Session cookies after: {dict(LEGACY.cookies)}\",
-    file=sys.stderr)\n\n    _raise_for(r)\n\ndef legacy_get(path: str, params=None)
-    -> Dict[str, Any]:\n    if not LEGACY.cookies:\n        legacy_login()\n    \n
-    \   url = f\"{LEGACY_BASE}{path}\"\n    validated_url = validate_url(url, \"legacy
-    GET\")\n    \n    r = LEGACY.get(validated_url, params=params, verify=VERIFY_TLS,
-    timeout=REQUEST_TIMEOUT_S)\n    return _raise_for(r)\n\ndef legacy_post(path:
-    str, body=None) -> Dict[str, Any]:\n    if not LEGACY.cookies:\n        legacy_login()\n
-    \   \n    url = f\"{LEGACY_BASE}{path}\"\n    validated_url = validate_url(url,
-    \"legacy POST\")\n    \n    r = LEGACY.post(validated_url, json=body, verify=VERIFY_TLS,
-    timeout=REQUEST_TIMEOUT_S)\n    return _raise_for(r)\n\n# ========= UniFi Protect
-    helpers (with SSRF protection) =========\ndef protect_get(path: str, params=None)
-    -> Dict[str, Any]:\n    \"\"\"\n    Try API key first; if unauthorized, fall back
-    to legacy cookie session.\n    \"\"\"\n    url = f\"{PROTECT_BASE}{path}\"\n    validated_url
-    = validate_url(url, \"Protect GET\")\n    \n    try:\n        r = requests.get(validated_url,
-    headers=_h_key(), params=params, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n
-    \       if r.status_code == 200:\n            return _raise_for(r)\n        if
-    r.status_code not in (401, 403):\n            return _raise_for(r)\n    except
-    Exception:\n        pass  # fall back\n    \n    if not LEGACY.cookies:\n        legacy_login()\n
-    \   r = LEGACY.get(validated_url, params=params, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n
-    \   return _raise_for(r)\n\ndef protect_post(path: str, body=None) -> Dict[str,
-    Any]:\n    url = f\"{PROTECT_BASE}{path}\"\n    validated_url = validate_url(url,
-    \"Protect POST\")\n    \n    try:\n        r = requests.post(validated_url, headers=_h_key(),
-    json=body, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n        if r.status_code
-    in (200, 204):\n            return _raise_for(r)\n        if r.status_code not
-    in (401, 403):\n            return _raise_for(r)\n    except Exception:\n        pass\n
-    \   \n    if not LEGACY.cookies:\n        legacy_login()\n    r = LEGACY.post(validated_url,
-    json=body, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n    return _raise_for(r)\n\n#
-    ========= Utilities =========\ndef paginate_integration(path: str, extra_params:
-    Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:\n    params = {\"limit\":
-    200, \"offset\": 0}\n    if extra_params:\n        params.update(extra_params)\n
-    \   items: List[Dict[str, Any]] = []\n    while True:\n        resp = _get(f\"{NET_INTEGRATION_BASE}{path}\",
-    _h_key(), params=params)\n        data = resp.get(\"data\", [])\n        items.extend(data)\n
-    \       count, limit, total = resp.get(\"count\", 0), resp.get(\"limit\", 0),
-    resp.get(\"totalCount\", 0)\n        if count != limit or total <= len(items):\n
-    \           break\n        params[\"offset\"] += limit\n    return items\n\ndef
-    get_devices_with_fallback(site_id: str) -> List[Dict[str, Any]]:\n    \"\"\"Get
-    devices using Integration API first, fallback to Legacy API\"\"\"\n    try:\n
-    \       return paginate_integration(f\"/sites/{site_id}/devices\")\n    except
-    Exception as e:\n        # Fallback to Legacy API\n        try:\n            legacy_login()\n
-    \           resp = legacy_get(f\"/s/{site_id}/stat/device\")\n            return
-    resp.get(\"data\", [])\n        except Exception as e2:\n            raise Exception(f\"Integration
-    API: {str(e)}, Legacy API: {str(e2)}\")\n\ndef get_clients_with_fallback(site_id:
-    str) -> List[Dict[str, Any]]:\n    \"\"\"Get clients using Integration API first,
-    fallback to Legacy API\"\"\"\n    try:\n        return paginate_integration(f\"/sites/{site_id}/clients\")\n
-    \   except Exception as e:\n        # Fallback to Legacy API\n        try:\n            legacy_login()\n
-    \           resp = legacy_get(f\"/s/{site_id}/stat/sta\")\n            return
-    resp.get(\"data\", [])\n        except Exception as e2:\n            raise Exception(f\"Integration
-    API: {str(e)}, Legacy API: {str(e2)}\")\n\n# ========= UniFi Health Functions
-    =========\ndef _health_check() -> Dict[str, Any]:\n    \"\"\"\n    Minimal controller
-    sanity check. Try Cloud API first (primary), failback to local.\n    Returns ok:
-    True with sites count, or ok: False with error.\n    \"\"\"\n    # Try Cloud API
-    first (primary - api.ui.com)\n    if SM_BASE and SM_TOKEN:\n        try:\n            headers
-    = {\"Accept\": \"application/json\", \"X-API-KEY\": SM_TOKEN}\n            url
-    = f\"{SM_BASE}/v1/sites\"\n            validated_url = validate_url(url, \"cloud
-    health check\")\n            resp = requests.get(validated_url, headers=headers,
-    verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n            if resp.status_code
-    == 200:\n                data = resp.json()\n                sites = data.get(\"data\",
-    [])\n                return {\n                    \"ok\": True,\n                    \"cloud_sites_count\":
-    len(sites),\n                    \"base\": SM_BASE,\n                    \"verify_tls\":
-    VERIFY_TLS,\n                    \"api_mode\": \"cloud\",\n                    \"failover_available\":
-    f\"https://{FAILOVER_HOST}:{FAILOVER_PORT}\"\n                }\n        except
-    Exception as cloud_err:\n            print(f\"[Health] Cloud API failed: {cloud_err},
-    trying failover...\")\n\n    # Failover: Try local Integration API\n    try:\n
-    \       resp = _get(\"/\".join([NET_INTEGRATION_BASE, \"sites\"]), _h_key())\n
-    \       return {\n            \"ok\": True,\n            \"integration_sites_count\":
-    resp.get(\"count\"),\n            \"base\": NET_INTEGRATION_BASE,\n            \"verify_tls\":
-    VERIFY_TLS,\n            \"api_mode\": \"integration_failover\"\n        }\n    except
-    Exception as e:\n        # Failover: Try Legacy API (older UniFi OS/firmware)\n
-    \       try:\n            # legacy_get will handle login automatically if needed\n
-    \           resp = legacy_get(\"/self/sites\")\n            sites = resp.get(\"data\",
-    [])\n            return {\n                \"ok\": True,\n                \"legacy_sites_count\":
-    len(sites),\n                \"base\": LEGACY_BASE,\n                \"verify_tls\":
-    VERIFY_TLS,\n                \"api_mode\": \"legacy_failover\"\n            }\n
-    \       except Exception as e2:\n            return {\n                \"ok\":
-    False,\n                \"error\": f\"Cloud API failed, Integration API: {str(e)},
-    Legacy API: {str(e2)}\",\n                \"base\": f\"{SM_BASE} (primary), {NET_INTEGRATION_BASE}
-    (failover)\",\n                \"verify_tls\": VERIFY_TLS\n            }\n\n#
-    ========= Enhanced List Hosts Functions =========\ndef list_hosts_api_ui_com_format():\n
-    \   \"\"\"\n    Exact implementation matching your provided examples:\n    - import
-    http.client approach  \n    - import requests approach\n    Both for https://api.ui.com/v1/hosts\n
-    \   \"\"\"\n    results = {\n        \"timestamp\": datetime.now().isoformat(),\n
-    \       \"http_client_method\": {},\n        \"requests_method\": {},\n        \"unified_response\":
-    {}\n    }\n    \n    # Method 1: Using http.client (your first example)\n    try:\n
-    \       import http.client\n        conn = http.client.HTTPSConnection(\"api.ui.com\")\n
-    \       payload = ''\n        headers = {\n            'Accept': 'application/json',\n
-    \           'X-API-Key': SM_TOKEN  # Use your SM_TOKEN as the X-API-Key\n        }\n
-    \       conn.request(\"GET\", \"/v1/hosts\", payload, headers)\n        res =
-    conn.getresponse()\n        data = res.read()\n        \n        results[\"http_client_method\"]
-    = {\n            \"success\": res.status == 200,\n            \"status_code\":
-    res.status,\n            \"raw_data\": data.decode(\"utf-8\"),\n            \"parsed_data\":
-    json.loads(data.decode(\"utf-8\")) if res.status == 200 else None\n        }\n
-    \       conn.close()\n        \n    except Exception as e:\n        results[\"http_client_method\"]
-    = {\"error\": str(e)}\n    \n    # Method 2: Using requests (your second example)
-    - with validation\n    try:\n        url = \"https://api.ui.com/v1/hosts\"\n        validated_url
-    = validate_url(url, \"cloud API hosts list\")\n        \n        payload = {}\n
-    \       headers = {\n            'Accept': 'application/json',\n            'X-API-Key':
-    SM_TOKEN  # Use your SM_TOKEN as the X-API-Key\n        }\n        response =
-    requests.request(\"GET\", validated_url, headers=headers, data=payload, \n                                  verify=VERIFY_TLS,
-    timeout=REQUEST_TIMEOUT_S)\n        \n        results[\"requests_method\"] = {\n
-    \           \"success\": response.status_code == 200,\n            \"status_code\":
-    response.status_code,\n            \"response_text\": response.text,\n            \"parsed_data\":
-    response.json() if response.status_code == 200 else None\n        }\n        \n
-    \   except Exception as e:\n        results[\"requests_method\"] = {\"error\":
-    str(e)}\n    \n    # Create unified response\n    if results[\"requests_method\"].get(\"success\"):\n
-    \       results[\"unified_response\"] = results[\"requests_method\"][\"parsed_data\"]\n
-    \   elif results[\"http_client_method\"].get(\"success\"):\n        results[\"unified_response\"]
-    = results[\"http_client_method\"][\"parsed_data\"]\n    \n    return results\n\ndef
-    get_correct_site_ids():\n    \"\"\"\n    Get the correct site IDs from your controller\n
-    \   Since 'default' is failing, we need to discover the actual site IDs\n    \"\"\"\n
-    \   try:\n        # Try to get sites from Integration API\n        resp = _get(f\"{NET_INTEGRATION_BASE}/sites\",
-    _h_key())\n        sites = resp.get(\"data\", [])\n        return [site.get(\"id\")
-    for site in sites if site.get(\"id\")]\n    except Exception as e:\n        print(f\"Failed
-    to get sites from Integration API: {e}\")\n        \n        # Try legacy API
-    to get sites\n        try:\n            legacy_login()\n            resp = legacy_get(\"/self/sites\")\n
-    \           sites = resp.get(\"data\", [])\n            return [site.get(\"name\")
-    for site in sites if site.get(\"name\")]\n        except Exception as e2:\n            print(f\"Failed
-    to get sites from Legacy API: {e2}\")\n            \n    return []\n\ndef list_hosts_with_correct_sites():\n
-    \   \"\"\"\n    List hosts using the correct site IDs discovered from your controller\n
-    \   \"\"\"\n    result = {\n        \"success\": False,\n        \"discovered_sites\":
-    [],\n        \"hosts_by_site\": {},\n        \"total_hosts\": 0,\n        \"errors\":
-    []\n    }\n    \n    # Discover correct site IDs\n    site_ids = get_correct_site_ids()\n
-    \   result[\"discovered_sites\"] = site_ids\n    \n    if not site_ids:\n        result[\"errors\"].append(\"No
-    valid site IDs discovered\")\n        return result\n    \n    # Try each site\n
-    \   for site_id in site_ids:\n        try:\n            # Get clients for this
-    site\n            clients = paginate_integration(f\"/sites/{site_id}/clients\")\n
-    \           devices = paginate_integration(f\"/sites/{site_id}/devices\")\n            \n
-    \           site_hosts = {\n                \"site_id\": site_id,\n                \"clients\":
-    clients,\n                \"devices\": devices,\n                \"client_count\":
-    len(clients),\n                \"device_count\": len(devices),\n                \"total\":
-    len(clients) + len(devices)\n            }\n            \n            result[\"hosts_by_site\"][site_id]
-    = site_hosts\n            result[\"total_hosts\"] += site_hosts[\"total\"]\n            result[\"success\"]
-    = True\n            \n        except Exception as e:\n            result[\"errors\"].append(f\"Site
-    {site_id}: {str(e)}\")\n    \n    return result\n\n# ========= Status Manager
-    Classes =========\n@dataclass\nclass UniFiStatus:\n    \"\"\"Structured status
-    information for UniFi components\"\"\"\n    component: str\n    status: str\n
-    \   last_check: datetime\n    details: Dict[str, Any]\n    issues: List[str]\n\nclass
-    UniFiStatusManager:\n    \"\"\"Centralized status management for all UniFi services\"\"\"\n
-    \   \n    def __init__(self):\n        self.last_status_check = None\n        self.cached_status
-    = {}\n        self.status_cache_duration = 300  # 5 minutes\n    \n    def get_comprehensive_status(self,
-    site_id: str = None) -> Dict[str, Any]:\n        \"\"\"Get complete status of
-    all UniFi services\"\"\"\n        now = datetime.now()\n        \n        # Use
-    discovered site ID if none provided\n        if site_id is None:\n            sites
-    = get_correct_site_ids()\n            site_id = sites[0] if sites else \"default\"\n
-    \       \n        # Check if we need to refresh cache\n        if (self.last_status_check
-    is None or \n            (now - self.last_status_check).seconds > self.status_cache_duration):\n
-    \           self.cached_status = self._collect_all_status(site_id)\n            self.last_status_check
-    = now\n        \n        return self.cached_status\n    \n    def _collect_all_status(self,
-    site_id: str) -> Dict[str, Any]:\n        \"\"\"Collect status from all UniFi
-    services\"\"\"\n        status = {\n            \"timestamp\": datetime.now().isoformat(),\n
-    \           \"site_id\": site_id,\n            \"overall_health\": \"unknown\",\n
-    \           \"services\": {},\n            \"summary\": {\n                \"total_devices\":
-    0,\n                \"online_devices\": 0,\n                \"total_clients\":
-    0,\n                \"active_clients\": 0,\n                \"issues_count\":
-    0\n            }\n        }\n        \n        # Check Integration API health\n
-    \       try:\n            health = _health_check()\n            status[\"services\"][\"integration\"]
-    = {\n                \"status\": \"healthy\" if health.get(\"ok\") else \"error\",\n
-    \               \"details\": health,\n                \"last_check\": datetime.now().isoformat()\n
-    \           }\n        except Exception as e:\n            status[\"services\"][\"integration\"]
-    = {\n                \"status\": \"error\",\n                \"error\": str(e),\n
-    \               \"last_check\": datetime.now().isoformat()\n            }\n        \n
-    \       # Check devices status\n        try:\n            devices = get_devices_with_fallback(site_id)\n
-    \           # Handle both Integration API (string) and Legacy API (int) state
-    formats\n            online_devices = [d for d in devices if\n                            (isinstance(d.get(\"state\"),
-    int) and d.get(\"state\") == 1) or\n                            (isinstance(d.get(\"state\"),
-    str) and d.get(\"state\").upper() == \"ONLINE\")]\n            status[\"services\"][\"devices\"]
-    = {\n                \"status\": \"healthy\",\n                \"total\": len(devices),\n
-    \               \"online\": len(online_devices),\n                \"offline\":
-    len(devices) - len(online_devices),\n                \"last_check\": datetime.now().isoformat()\n
-    \           }\n            status[\"summary\"][\"total_devices\"] = len(devices)\n
-    \           status[\"summary\"][\"online_devices\"] = len(online_devices)\n        except
-    Exception as e:\n            status[\"services\"][\"devices\"] = {\n                \"status\":
-    \"error\",\n                \"error\": str(e),\n                \"last_check\":
-    datetime.now().isoformat()\n            }\n        \n        # Check clients status\n
-    \       try:\n            all_clients = get_clients_with_fallback(site_id)\n            #
-    The /clients endpoint returns currently connected clients\n            status[\"services\"][\"clients\"]
-    = {\n                \"status\": \"healthy\",\n                \"total\": len(all_clients),\n
-    \               \"active\": len(all_clients),\n                \"last_check\":
-    datetime.now().isoformat()\n            }\n            status[\"summary\"][\"total_clients\"]
-    = len(all_clients)\n            status[\"summary\"][\"active_clients\"] = len(all_clients)\n
-    \       except Exception as e:\n            status[\"services\"][\"clients\"]
-    = {\n                \"status\": \"error\",\n                \"error\": str(e),\n
-    \               \"last_check\": datetime.now().isoformat()\n            }\n        \n
-    \       # Check Access status (if available)\n        try:\n            doors_resp
-    = _get(f\"{ACCESS_BASE}/doors\", _h_key())\n            status[\"services\"][\"access\"]
-    = {\n                \"status\": \"healthy\",\n                \"doors_count\":
-    len(doors_resp.get(\"data\", [])),\n                \"last_check\": datetime.now().isoformat()\n
-    \           }\n        except Exception as e:\n            status[\"services\"][\"access\"]
-    = {\n                \"status\": \"unavailable\",\n                \"error\":
-    str(e),\n                \"last_check\": datetime.now().isoformat()\n            }\n
-    \       \n        # Check Protect status (if available)\n        try:\n            cameras
-    = protect_get(\"/cameras\")\n            online_cameras = [c for c in cameras.get(\"data\",
-    []) if c.get(\"state\") == \"CONNECTED\"]\n            status[\"services\"][\"protect\"]
-    = {\n                \"status\": \"healthy\",\n                \"cameras_total\":
-    len(cameras.get(\"data\", [])),\n                \"cameras_online\": len(online_cameras),\n
-    \               \"last_check\": datetime.now().isoformat()\n            }\n        except
-    Exception as e:\n            status[\"services\"][\"protect\"] = {\n                \"status\":
-    \"unavailable\",\n                \"error\": str(e),\n                \"last_check\":
-    datetime.now().isoformat()\n            }\n        \n        # Calculate overall
-    health\n        status[\"overall_health\"] = self._calculate_overall_health(status[\"services\"])\n
-    \       \n        # Count issues\n        status[\"summary\"][\"issues_count\"]
-    = sum(\n            1 for service in status[\"services\"].values() \n            if
-    service[\"status\"] in [\"error\", \"degraded\"]\n        )\n        \n        return
-    status\n    \n    def _calculate_overall_health(self, services: Dict[str, Any])
-    -> str:\n        \"\"\"Calculate overall system health based on service statuses\"\"\"\n
-    \       statuses = [s[\"status\"] for s in services.values()]\n        \n        if
-    any(s == \"error\" for s in statuses):\n            return \"degraded\"\n        elif
-    all(s in [\"healthy\", \"unavailable\"] for s in statuses):\n            # Consider
-    unavailable services (like Access/Protect) as OK if not configured\n            return
-    \"healthy\"\n        else:\n            return \"unknown\"\n    \n    def get_device_health_summary(self,
-    site_id: str = None) -> Dict[str, Any]:\n        \"\"\"Get detailed device health
-    information\"\"\"\n        if site_id is None:\n            sites = get_correct_site_ids()\n
-    \           site_id = sites[0] if sites else \"default\"\n            \n        try:\n
-    \           devices = paginate_integration(f\"/sites/{site_id}/devices\")\n            \n
-    \           summary = {\n                \"total_devices\": len(devices),\n                \"by_state\":
-    {},\n                \"by_type\": {},\n                \"issues\": [],\n                \"uptime_stats\":
-    {\"min\": None, \"max\": None, \"avg\": None}\n            }\n            \n            uptimes
-    = []\n            for device in devices:\n                # Count by state - handle
-    both Integration API (string) and Legacy API (int)\n                state = device.get(\"state\",
-    \"unknown\")\n\n                # Normalize state to lowercase string for consistent
-    handling\n                if isinstance(state, str):\n                    state_name
-    = state.lower()\n                elif isinstance(state, int):\n                    state_name
-    = {1: \"online\", 0: \"offline\", -1: \"error\"}.get(state, \"unknown\")\n                else:\n
-    \                   state_name = \"unknown\"\n\n                summary[\"by_state\"][state_name]
-    = summary[\"by_state\"].get(state_name, 0) + 1\n\n                # Count by type\n
-    \               dev_type = device.get(\"type\", device.get(\"model\", \"unknown\"))\n
-    \               summary[\"by_type\"][dev_type] = summary[\"by_type\"].get(dev_type,
-    0) + 1\n\n                # Check for issues - handle both string and int\n                is_offline
-    = (isinstance(state, int) and state == 0) or \\\n                            (isinstance(state,
-    str) and state.upper() == \"OFFLINE\")\n                if is_offline:\n                    summary[\"issues\"].append(f\"{device.get('name',
-    'Unknown')} is offline\")\n\n                # Collect uptime\n                uptime
-    = device.get(\"uptime\")\n                if uptime:\n                    uptimes.append(uptime)\n
-    \           \n            # Calculate uptime stats\n            if uptimes:\n
-    \               summary[\"uptime_stats\"] = {\n                    \"min\": min(uptimes),\n
-    \                   \"max\": max(uptimes),\n                    \"avg\": sum(uptimes)
-    / len(uptimes)\n                }\n            \n            return summary\n
-    \           \n        except Exception as e:\n            return {\"error\": str(e)}\n
-    \   \n    def get_client_activity_summary(self, site_id: str = None) -> Dict[str,
-    Any]:\n        \"\"\"Get client activity and usage patterns\"\"\"\n        if
-    site_id is None:\n            sites = get_correct_site_ids()\n            site_id
-    = sites[0] if sites else \"default\"\n\n        try:\n            # The /clients
-    endpoint returns currently connected clients\n            active_clients = paginate_integration(f\"/sites/{site_id}/clients\")\n
-    \           \n            summary = {\n                \"active_count\": len(active_clients),\n
-    \               \"by_connection\": {},\n                \"bandwidth_usage\": {\"total_rx\":
-    0, \"total_tx\": 0},\n                \"top_users\": [],\n                \"last_updated\":
-    datetime.now().isoformat()\n            }\n            \n            # Analyze
-    active clients\n            clients_with_usage = []\n            for client in
-    active_clients:\n                # Count by connection type\n                conn_type
-    = \"wired\" if client.get(\"is_wired\") else \"wireless\"\n                summary[\"by_connection\"][conn_type]
-    = summary[\"by_connection\"].get(conn_type, 0) + 1\n                \n                #
-    Sum bandwidth\n                rx_bytes = client.get(\"rx_bytes\", 0)\n                tx_bytes
-    = client.get(\"tx_bytes\", 0)\n                summary[\"bandwidth_usage\"][\"total_rx\"]
-    += rx_bytes\n                summary[\"bandwidth_usage\"][\"total_tx\"] += tx_bytes\n
-    \               \n                # Collect for top users\n                total_usage
-    = rx_bytes + tx_bytes\n                clients_with_usage.append({\n                    \"name\":
-    client.get(\"hostname\") or client.get(\"name\") or client.get(\"mac\"),\n                    \"usage\":
-    total_usage,\n                    \"rx\": rx_bytes,\n                    \"tx\":
-    tx_bytes\n                })\n            \n            # Get top 5 users by bandwidth\n
-    \           summary[\"top_users\"] = sorted(\n                clients_with_usage,
-    \n                key=lambda x: x[\"usage\"], \n                reverse=True\n
-    \           )[:5]\n            \n            return summary\n            \n        except
-    Exception as e:\n            return {\"error\": str(e)}\n\n# Initialize the status
-    manager\nstatus_manager = UniFiStatusManager()\n\n# ========= UniFi Health (triple-registered)
-    =========\n\n# 1) Original scheme you tried\n@mcp.resource(\"unifi://health\")\nasync
-    def unifi_health_resource() -> Dict[str, Any]:\n    return _health_check()\n\n#
-    2) Alternate scheme many inspectors display reliably\n@mcp.resource(\"health://unifi\")\nasync
-    def health_alias_resource() -> Dict[str, Any]:\n    return _health_check()\n\n#
-    3) Extra alias (belt & suspenders)\n@mcp.resource(\"status://unifi\")\nasync def
-    status_alias_resource() -> Dict[str, Any]:\n    return _health_check()\n\n# =========
-    Capability probe =========\n@mcp.resource(\"unifi://capabilities\")\nasync def
-    capabilities() -> Dict[str, Any]:\n    out: Dict[str, Any] = {\"integration\":
-    {}, \"access\": {}, \"legacy\": {}, \"protect\": {}, \"sitemanager\": {}}\n\n
-    \   def try_get(label: str, url: str, headers: Optional[Dict[str, str]] = None):\n
-    \       try:\n            validated_url = validate_url(url, f\"capability probe:
-    {label}\")\n            r = requests.get(validated_url, headers=headers, verify=VERIFY_TLS,
-    timeout=6)\n            out[label] = {\"url\": url, \"status\": r.status_code}\n
-    \       except Exception as e:\n            out[label] = {\"url\": url, \"error\":
-    str(e)}\n\n    # Network Integration\n    try_get(\"integration.sites\", \"/\".join([NET_INTEGRATION_BASE,
-    \"sites\"]), _h_key())\n    \n    # Get correct site for testing\n    sites =
-    get_correct_site_ids()\n    test_site = sites[0] if sites else \"default\"\n    \n
-    \   try_get(\"integration.devices\", \"/\".join([NET_INTEGRATION_BASE, \"sites\",
-    test_site, \"devices\"]), _h_key())\n    try_get(\"integration.clients\", \"/\".join([NET_INTEGRATION_BASE,
-    \"sites\", test_site, \"clients\"]), _h_key())\n    try_get(\"integration.wlans\",
-    \"/\".join([NET_INTEGRATION_BASE, \"sites\", test_site, \"wlans\"]), _h_key())\n\n
-    \   # Access\n    try_get(\"access.doors\", \"/\".join([ACCESS_BASE, \"doors\"]),
-    _h_key())\n    try_get(\"access.readers\", \"/\".join([ACCESS_BASE, \"readers\"]),
-    _h_key())\n    try_get(\"access.events\", \"/\".join([ACCESS_BASE, \"events\"]),
-    _h_key())\n\n    # Legacy quick check\n    try:\n        legacy_login()\n        legacy_url
-    = \"/\".join([LEGACY_BASE, \"s\", test_site, \"stat\", \"sta\"])\n        validated_url
-    = validate_url(legacy_url, \"legacy capability probe\")\n        r = LEGACY.get(validated_url,
-    verify=VERIFY_TLS, timeout=6)\n        out[\"legacy.stat_sta\"] = {\"url\": r.request.url,
-    \"status\": r.status_code}\n    except Exception as e:\n        out[\"legacy.stat_sta\"]
-    = {\"error\": str(e)}\n\n    # Protect\n    def try_get_protect(label: str, path:
-    str):\n        try:\n            protect_url = f\"{PROTECT_BASE}{path}\"\n            validated_url
-    = validate_url(protect_url, f\"protect probe: {label}\")\n            r = requests.get(validated_url,
-    headers=_h_key(), verify=VERIFY_TLS, timeout=6)\n            if r.status_code
-    in (401, 403) and LEGACY_USER and LEGACY_PASS:\n                legacy_login()\n
-    \               r = LEGACY.get(validated_url, verify=VERIFY_TLS, timeout=6)\n
-    \           out[f\"protect.{label}\"] = {\"url\": protect_url, \"status\": r.status_code}\n
-    \       except Exception as e:\n            out[f\"protect.{label}\"] = {\"url\":
-    f\"{PROTECT_BASE}{path}\", \"error\": str(e)}\n\n    try_get_protect(\"bootstrap\",
-    \"/bootstrap\")\n    try_get_protect(\"cameras\", \"/cameras\")\n    try_get_protect(\"events\",
-    \"/events\")\n\n    # Site Manager\n    if SM_BASE and SM_TOKEN:\n        try_get(\"sitemanager.root\",
-    f\"{SM_BASE}/\", {\"Authorization\": SM_TOKEN})\n    else:\n        out[\"sitemanager.info\"]
-    = \"Set UNIFI_SITEMGR_BASE & UNIFI_SITEMGR_TOKEN to probe.\"\n\n    return out\n\n#
-    ========= Network Integration: resources =========\n@mcp.resource(\"sites://{site_id}/devices\")\nasync
-    def devices(site_id: str) -> List[Dict[str, Any]]:\n    return paginate_integration(f\"/sites/{site_id}/devices\")\n\n@mcp.resource(\"sites://{site_id}/clients\")\nasync
-    def clients(site_id: str) -> List[Dict[str, Any]]:\n    return paginate_integration(f\"/sites/{site_id}/clients\")\n\n@mcp.resource(\"sites://{site_id}/clients/active\")\nasync
-    def clients_active(site_id: str) -> List[Dict[str, Any]]:\n    # The /clients
-    endpoint returns currently connected (active) clients\n    return paginate_integration(f\"/sites/{site_id}/clients\")\n\n#
-    WLANs with graceful fallback (Integration -> Legacy) and safe URL joins\n@mcp.resource(\"sites://{site_id}/wlans\")\nasync
-    def wlans(site_id: str):\n    # 1) Integration attempt (often 404/not exposed)\n
-    \   try:\n        url = \"/\".join([NET_INTEGRATION_BASE, \"sites\", site_id,
-    \"wlans\"])\n        res = _get(url, _h_key())\n        return res.get(\"data\",
-    [])\n    except UniFiHTTPError as e:\n        if \"404\" not in str(e):\n            raise\n
-    \   # 2) Legacy fallback\n    if LEGACY_USER and LEGACY_PASS:\n        lr = legacy_get(f\"/s/{site_id}/rest/wlanconf\")\n
-    \       return lr.get(\"data\", lr)\n    # 3) Explain\n    return {\n        \"ok\":
-    False,\n        \"reason\": \"WLANs not exposed by Integration API and no legacy
-    credentials provided.\",\n        \"tried\": [\n            \"/\".join([NET_INTEGRATION_BASE,
-    \"sites\", site_id, \"wlans\"]),\n            f\"{LEGACY_BASE}/s/{site_id}/rest/wlanconf
-    (legacy)\"\n        ],\n        \"how_to_enable_legacy\": \"Set UNIFI_USERNAME
-    and UNIFI_PASSWORD.\"\n    }\n\n# Search helpers\n@mcp.resource(\"sites://{site_id}/search/clients/{query}\")\nasync
-    def search_clients(site_id: str, query: str):\n    cs = await clients(site_id)\n
-    \   q = query.lower()\n    def hit(c): return any(q in str(c.get(k, \"\")).lower()
-    for k in (\"hostname\", \"name\", \"mac\", \"ip\", \"user\"))\n    return [c for
-    c in cs if hit(c)]\n\n@mcp.resource(\"sites://{site_id}/search/devices/{query}\")\nasync
-    def search_devices(site_id: str, query: str):\n    ds = await devices(site_id)\n
-    \   q = query.lower()\n    def hit(d): return any(q in str(d.get(k, \"\")).lower()
-    for k in (\"name\", \"model\", \"mac\", \"ip\", \"ip_address\"))\n    return [d
-    for d in ds if hit(d)]\n\n# ========= Enhanced Status Resources =========\n@mcp.resource(\"status://system\")\nasync
-    def system_status_resource() -> Dict[str, Any]:\n    \"\"\"Real-time system status
-    resource\"\"\"\n    return status_manager.get_comprehensive_status()\n\n@mcp.resource(\"status://devices\")\nasync
-    def devices_status_resource() -> Dict[str, Any]:\n    \"\"\"Device health status
-    resource\"\"\"\n    return status_manager.get_device_health_summary()\n\n@mcp.resource(\"status://clients\")\nasync
-    def clients_status_resource() -> Dict[str, Any]:\n    \"\"\"Client activity status
-    resource\"\"\"\n    return status_manager.get_client_activity_summary()\n\n# =========
-    Tools =========\n\n# Tool fallback (always visible in Tools tab)\n@mcp.tool()\ndef
-    unifi_health() -> Dict[str, Any]:\n    \"\"\"Ping the UniFi Integration API and
-    report basic health.\"\"\"\n    return _health_check()\n\n# Debug tool to see
-    what FastMCP registered\n@mcp.tool()\ndef debug_registry() -> Dict[str, Any]:\n
-    \   \"\"\"\n    Lists resources, tools, and prompts currently registered.\n    Helpful
-    when a resource isn't visible in your inspector UI.\n    \"\"\"\n    def grab(obj,
-    names):\n        for n in names:\n            if hasattr(obj, n):\n                return
-    getattr(obj, n)\n        return []\n\n    resources = grab(mcp, (\"resources\",
-    \"_resources\"))\n    tools     = grab(mcp, (\"tools\", \"_tools\"))\n    prompts
-    \  = grab(mcp, (\"prompts\", \"_prompts\"))\n\n    def res_name(r):\n        return
-    getattr(r, \"uri_template\", getattr(r, \"name\", str(r)))\n    def tool_name(t):\n
-    \       return getattr(t, \"name\", str(t))\n    def prompt_name(p):\n        return
-    getattr(p, \"name\", str(p))\n\n    return {\n        \"resources\": sorted([res_name(r)
-    for r in resources]),\n        \"tools\":     sorted([tool_name(t) for t in tools]),\n
-    \       \"prompts\":   sorted([prompt_name(p) for p in prompts]),\n    }\n\n#
-    ========= Enhanced Status Management Tools =========\n@mcp.tool()\ndef get_system_status(site_id:
-    str = None) -> Dict[str, Any]:\n    \"\"\"Get comprehensive UniFi system status
-    including all services and components.\"\"\"\n    return status_manager.get_comprehensive_status(site_id)\n\n#
-    REMOVED: Old local controller tools - replaced by Site Manager API versions below\n#
-    @mcp.tool()\n# def get_device_health(site_id: str = None) -> Dict[str, Any]:\n#
-    \    \"\"\"Get detailed device health summary with uptime and issue tracking.\"\"\"\n#
-    \    return status_manager.get_device_health_summary(site_id)\n\n# @mcp.tool()\n#
-    def get_client_activity(site_id: str = None) -> Dict[str, Any]:\n#     \"\"\"Get
-    client activity summary with bandwidth usage and connection types.\"\"\"\n#     return
-    status_manager.get_client_activity_summary(site_id)\n\n@mcp.tool()\ndef get_quick_status()
-    -> Dict[str, Any]:\n    \"\"\"Get a quick status overview of critical UniFi components.
-    Uses cloud API (api.ui.com) with local failover.\"\"\"\n\n    # Try Cloud API
-    first (primary - api.ui.com)\n    if SM_BASE and SM_TOKEN:\n        try:\n            headers
-    = {\"Accept\": \"application/json\", \"X-API-KEY\": SM_TOKEN}\n            url
-    = f\"{SM_BASE}/v1/sites\"\n            validated_url = validate_url(url, \"cloud
-    quick status\")\n            resp = requests.get(validated_url, headers=headers,
-    verify=True, timeout=REQUEST_TIMEOUT_S)\n\n            if resp.status_code ==
-    200:\n                data = resp.json()\n                sites = data.get(\"data\",
-    [])\n\n                if sites:\n                    site = sites[0]\n                    stats
-    = site.get(\"statistics\", {}).get(\"counts\", {})\n\n                    total_devices
-    = stats.get(\"totalDevice\", 0)\n                    offline_devices = stats.get(\"offlineDevice\",
-    0)\n                    online_devices = total_devices - offline_devices\n                    wifi_clients
-    = stats.get(\"wifiClient\", 0)\n                    wired_clients = stats.get(\"wiredClient\",
-    0)\n\n                    return {\n                        \"status\": \"healthy\",\n
-    \                       \"timestamp\": datetime.now().isoformat(),\n                        \"site_name\":
-    site.get(\"meta\", {}).get(\"name\", \"default\"),\n                        \"api_mode\":
-    \"cloud\",\n                        \"summary\": {\n                            \"devices_online\":
-    f\"{online_devices}/{total_devices}\",\n                            \"active_clients\":
-    wifi_clients + wired_clients,\n                            \"wifi_clients\": wifi_clients,\n
-    \                           \"wired_clients\": wired_clients,\n                            \"controller_responsive\":
-    True\n                        },\n                        \"failover_available\":
-    f\"https://{FAILOVER_HOST}:{FAILOVER_PORT}\"\n                    }\n        except
-    Exception as cloud_err:\n            print(f\"[QuickStatus] Cloud API failed:
-    {cloud_err}, trying local failover...\")\n\n    # Failover to local Integration
-    API\n    health = _health_check()\n    if not health.get(\"ok\"):\n        return
-    {\"status\": \"error\", \"message\": \"Both cloud and local APIs unreachable\",
-    \"details\": health}\n\n    try:\n        # Get correct site ID\n        sites
-    = get_correct_site_ids()\n        site_id = sites[0] if sites else \"default\"\n\n
-    \       # Quick counts\n        devices = paginate_integration(f\"/sites/{site_id}/devices\")\n
-    \       # The /clients endpoint returns currently connected (active) clients\n
-    \       active_clients = paginate_integration(f\"/sites/{site_id}/clients\")\n\n
-    \       # Count online devices - handle both Integration API (string) and Legacy
-    API (int)\n        online_devices = len([d for d in devices if\n                             (isinstance(d.get(\"state\"),
-    int) and d.get(\"state\") == 1) or\n                             (isinstance(d.get(\"state\"),
-    str) and d.get(\"state\").upper() == \"ONLINE\")])\n\n        return {\n            \"status\":
-    \"healthy\",\n            \"timestamp\": datetime.now().isoformat(),\n            \"site_id\":
-    site_id,\n            \"api_mode\": \"local_failover\",\n            \"summary\":
-    {\n                \"devices_online\": f\"{online_devices}/{len(devices)}\",\n
-    \               \"active_clients\": len(active_clients),\n                \"controller_responsive\":
-    True\n            }\n        }\n    except Exception as e:\n        return {\n
-    \           \"status\": \"degraded\",\n            \"message\": f\"Controller
-    responsive but data collection failed: {str(e)}\",\n            \"api_mode\":
-    \"local_failover\"\n        }\n\n# ========= Enhanced List Hosts Tools =========\n@mcp.tool()\ndef
-    list_hosts_api_format():\n    \"\"\"\n    List hosts using the exact API format
-    from your examples\n    Matches: GET https://api.ui.com/v1/hosts with X-API-Key
-    header\n    \"\"\"\n    return list_hosts_api_ui_com_format()\n\n@mcp.tool()\ndef
-    discover_sites():\n    \"\"\"\n    Discover the correct site IDs for your UniFi
-    controller\n    \"\"\"\n    return {\n        \"discovered_sites\": get_correct_site_ids(),\n
-    \       \"note\": \"Use these site IDs instead of 'default' for local API calls\"\n
-    \   }\n\n@mcp.tool()\ndef list_hosts_fixed():\n    \"\"\"\n    List hosts using
-    discovered site IDs instead of 'default'\n    \"\"\"\n    return list_hosts_with_correct_sites()\n\n@mcp.tool()\ndef
-    working_list_hosts_example():\n    \"\"\"\n    Complete working example that combines
-    your API format with proper error handling\n    \"\"\"\n    example_result = {\n
-    \       \"method_used\": None,\n        \"data\": None,\n        \"success\":
-    False,\n        \"error\": None,\n        \"fallback_attempted\": False\n    }\n
-    \   \n    # Method 1: Try cloud API (your working method)\n    try:\n        url
-    = \"https://api.ui.com/v1/hosts\"\n        validated_url = validate_url(url, \"cloud
-    hosts list\")\n        \n        headers = {\n            'Accept': 'application/json',\n
-    \           'X-API-Key': SM_TOKEN\n        }\n        response = requests.get(validated_url,
-    headers=headers, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n        \n        if
-    response.status_code == 200:\n            example_result[\"method_used\"] = \"cloud_api\"\n
-    \           example_result[\"data\"] = response.json()\n            example_result[\"success\"]
-    = True\n            return example_result\n        else:\n            example_result[\"error\"]
-    = f\"Cloud API failed: {response.status_code}\"\n    except Exception as e:\n
-    \       example_result[\"error\"] = f\"Cloud API error: {str(e)}\"\n    \n    #
-    Method 2: Fallback to local API with proper site discovery\n    example_result[\"fallback_attempted\"]
-    = True\n    try:\n        sites = get_correct_site_ids()\n        if sites:\n
-    \           site_id = sites[0]  # Use first available site\n            clients
-    = paginate_integration(f\"/sites/{site_id}/clients\")\n            devices = paginate_integration(f\"/sites/{site_id}/devices\")\n
-    \           \n            # Format similar to cloud API response\n            local_data
-    = {\n                \"data\": [],\n                \"source\": \"local_integration_api\",\n
-    \               \"site_id\": site_id\n            }\n            \n            #
-    Add clients as hosts\n            for client in clients:\n                host_entry
-    = {\n                    \"id\": client.get(\"mac\"),\n                    \"type\":
-    \"client\",\n                    \"hostname\": client.get(\"hostname\"),\n                    \"ipAddress\":
-    client.get(\"ip\"),\n                    \"mac\": client.get(\"mac\"),\n                    \"isActive\":
-    client.get(\"is_active\", False)\n                }\n                local_data[\"data\"].append(host_entry)\n
-    \           \n            # Add devices as hosts\n            for device in devices:\n
-    \               host_entry = {\n                    \"id\": device.get(\"mac\"),\n
-    \                   \"type\": \"device\", \n                    \"hostname\":
-    device.get(\"name\"),\n                    \"ipAddress\": device.get(\"ip\"),\n
-    \                   \"mac\": device.get(\"mac\"),\n                    \"isActive\":
-    device.get(\"state\") == 1\n                }\n                local_data[\"data\"].append(host_entry)\n
-    \           \n            example_result[\"method_used\"] = \"local_integration_api\"\n
-    \           example_result[\"data\"] = local_data\n            example_result[\"success\"]
-    = True\n            \n        else:\n            example_result[\"error\"] = \"No
-    valid sites found for local API\"\n            \n    except Exception as e:\n
-    \       example_result[\"error\"] = f\"Local API fallback failed: {str(e)}\"\n
-    \   \n    return example_result\n\n@mcp.tool()\ndef debug_api_connectivity():\n
-    \   \"\"\"\n    Debug API connectivity issues and provide troubleshooting information\n
-    \   \"\"\"\n    debug_info = {\n        \"timestamp\": datetime.now().isoformat(),\n
-    \       \"tests\": {},\n        \"environment\": {},\n        \"recommendations\":
-    []\n    }\n    \n    # Test 1: Cloud API connectivity\n    try:\n        url =
-    \"https://api.ui.com/v1/hosts\"\n        validated_url = validate_url(url, \"cloud
-    API debug\")\n        response = requests.get(validated_url, \n                              headers={\"Accept\":
-    \"application/json\", \"X-API-Key\": SM_TOKEN},\n                              timeout=10,
-    verify=VERIFY_TLS)\n        debug_info[\"tests\"][\"cloud_api\"] = {\n            \"status\":
-    \"success\" if response.status_code == 200 else \"failed\",\n            \"status_code\":
-    response.status_code,\n            \"response_length\": len(response.text),\n
-    \           \"error\": response.text[:200] if response.status_code != 200 else
-    None\n        }\n    except Exception as e:\n        debug_info[\"tests\"][\"cloud_api\"]
-    = {\"status\": \"error\", \"error\": str(e)}\n    \n    # Test 2: Local controller
-    connectivity\n    try:\n        controller_url = f\"{NET_INTEGRATION_BASE}/sites\"\n
-    \       validated_url = validate_url(controller_url, \"local controller debug\")\n
-    \       response = requests.get(validated_url, headers=_h_key(), timeout=10, verify=VERIFY_TLS)\n
-    \       debug_info[\"tests\"][\"local_controller\"] = {\n            \"status\":
-    \"success\" if response.status_code == 200 else \"failed\",\n            \"status_code\":
-    response.status_code,\n            \"response_length\": len(response.text),\n
-    \           \"error\": response.text[:200] if response.status_code != 200 else
-    None\n        }\n    except Exception as e:\n        debug_info[\"tests\"][\"local_controller\"]
-    = {\"status\": \"error\", \"error\": str(e)}\n    \n    # Test 3: Check if controller
-    is reachable\n    try:\n        base_url = f\"https://{UNIFI_HOST}:{UNIFI_PORT}/\"\n
-    \       validated_url = validate_url(base_url, \"controller reachability\")\n
-    \       response = requests.get(validated_url, timeout=5, verify=VERIFY_TLS)\n
-    \       debug_info[\"tests\"][\"controller_reachable\"] = {\n            \"status\":
-    \"reachable\",\n            \"status_code\": response.status_code\n        }\n
-    \   except Exception as e:\n        debug_info[\"tests\"][\"controller_reachable\"]
-    = {\"status\": \"unreachable\", \"error\": str(e)}\n    \n    # Environment check\n
-    \   debug_info[\"environment\"] = {\n        \"unifi_host\": UNIFI_HOST,\n        \"unifi_port\":
-    UNIFI_PORT,\n        \"api_key_configured\": bool(UNIFI_API_KEY and UNIFI_API_KEY
-    != \"API\"),\n        \"cloud_base_configured\": bool(SM_BASE),\n        \"cloud_token_configured\":
-    bool(SM_TOKEN),\n        \"verify_tls\": VERIFY_TLS,\n        \"timeout\": REQUEST_TIMEOUT_S,\n
-    \       \"discovered_sites\": get_correct_site_ids(),\n        \"allowed_hosts\":
-    list(ALLOWED_HOSTS)\n    }\n    \n    # Generate recommendations\n    if debug_info[\"tests\"][\"cloud_api\"][\"status\"]
-    != \"success\":\n        debug_info[\"recommendations\"].append(\"Cloud API failed
-    - check UNIFI_SITEMGR_TOKEN\")\n    \n    if debug_info[\"tests\"][\"local_controller\"][\"status\"]
-    != \"success\":\n        debug_info[\"recommendations\"].append(\"Local controller
-    failed - check UNIFI_API_KEY and network connectivity\")\n    \n    if debug_info[\"tests\"][\"controller_reachable\"][\"status\"]
-    != \"reachable\":\n        debug_info[\"recommendations\"].append(\"Controller
-    unreachable - check UNIFI_GATEWAY_HOST and UNIFI_GATEWAY_PORT\")\n    \n    return
-    debug_info\n\n# ========= Action tools =========\n# Integration API — safe set\n@mcp.tool()\ndef
-    block_client(site_id: str, mac: str) -> Dict[str, Any]:\n    return _post(\"/\".join([NET_INTEGRATION_BASE,
-    \"sites\", site_id, \"clients\", \"block\"]), _h_key(), {\"mac\": mac})\n\n@mcp.tool()\ndef
-    unblock_client(site_id: str, mac: str) -> Dict[str, Any]:\n    return _post(\"/\".join([NET_INTEGRATION_BASE,
-    \"sites\", site_id, \"clients\", \"unblock\"]), _h_key(), {\"mac\": mac})\n\n@mcp.tool()\ndef
-    kick_client(site_id: str, mac: str) -> Dict[str, Any]:\n    return _post(\"/\".join([NET_INTEGRATION_BASE,
-    \"sites\", site_id, \"clients\", \"kick\"]), _h_key(), {\"mac\": mac})\n\n@mcp.tool()\ndef
-    locate_device(site_id: str, device_id: str, seconds: int = 30) -> Dict[str, Any]:\n
-    \   return _post(\"/\".join([NET_INTEGRATION_BASE, \"sites\", site_id, \"devices\",
-    device_id, \"locate\"]), _h_key(), {\"duration\": seconds})\n\n# Legacy-only example
-    for WLAN toggle\n@mcp.tool()\ndef wlan_set_enabled_legacy(site_id: str, wlan_id:
-    str, enabled: bool) -> Dict[str, Any]:\n    \"\"\"Toggle WLAN (legacy API) when
-    Integration API doesn't expose WLANs.\"\"\"\n    body = {\"_id\": wlan_id, \"enabled\":
-    bool(enabled)}\n    return legacy_post(f\"/s/{site_id}/rest/wlanconf/{wlan_id}\",
-    body)\n\n# Access — sample action (varies by build)\n@mcp.tool()\ndef access_unlock_door(door_id:
-    str, seconds: int = 5) -> Dict[str, Any]:\n    return _post(\"/\".join([ACCESS_BASE,
-    \"doors\", door_id, \"unlock\"]), _h_key(), {\"duration\": seconds})\n\n# Protect
-    — safe starters\n@mcp.tool()\ndef protect_camera_reboot(camera_id: str) -> Dict[str,
-    Any]:\n    return protect_post(f\"/cameras/{camera_id}/reboot\")\n\n@mcp.tool()\ndef
-    protect_camera_led(camera_id: str, enabled: bool) -> Dict[str, Any]:\n    body
-    = {\"ledSettings\": {\"isEnabled\": bool(enabled)}}\n    return protect_post(f\"/cameras/{camera_id}\",
-    body)\n\n@mcp.tool()\ndef protect_toggle_privacy(camera_id: str, enabled: bool)
-    -> Dict[str, Any]:\n    body = {\"privacyMode\": bool(enabled)}\n    return protect_post(f\"/cameras/{camera_id}\",
-    body)\n\n# ========= Updated Original Tools with Fixed Site IDs =========\n@mcp.tool()\ndef
-    list_hosts(site_id: str = None) -> Dict[str, Any]:\n    \"\"\"List all network
-    hosts/clients on the specified site\"\"\"\n    if site_id is None:\n        sites
-    = get_correct_site_ids()\n        site_id = sites[0] if sites else \"default\"\n
-    \   \n    try:\n        clients = paginate_integration(f\"/sites/{site_id}/clients\")\n
-    \       devices = paginate_integration(f\"/sites/{site_id}/devices\")\n        \n
-    \       return {\n            \"success\": True,\n            \"site_id\": site_id,\n
-    \           \"clients\": clients,\n            \"devices\": devices,\n            \"client_count\":
-    len(clients),\n            \"device_count\": len(devices),\n            \"total_hosts\":
-    len(clients) + len(devices),\n            \"timestamp\": datetime.now().isoformat()\n
-    \       }\n    except Exception as e:\n        return {\n            \"success\":
-    False,\n            \"site_id\": site_id,\n            \"error\": str(e),\n            \"timestamp\":
-    datetime.now().isoformat()\n        }\n\n# REMOVED: Old local controller tool
-    - replaced by Site Manager API version below\n# @mcp.tool()\n# def list_active_clients(site_id:
-    str = None) -> Dict[str, Any]:\n#     \"\"\"List only currently connected/active
-    clients\"\"\"\n#     if site_id is None:\n#         sites = get_correct_site_ids()\n#
-    \        site_id = sites[0] if sites else \"default\"\n#\n#     try:\n#         #
-    The /clients endpoint returns currently connected (active) clients\n#         clients
-    = paginate_integration(f\"/sites/{site_id}/clients\")\n#         return {\n#             \"success\":
-    True,\n#             \"site_id\": site_id,\n#             \"active_clients\":
-    clients,\n#             \"count\": len(clients),\n#             \"timestamp\":
-    datetime.now().isoformat()\n#         }\n#     except Exception as e:\n#         return
-    {\n#             \"success\": False,\n#             \"site_id\": site_id,\n#             \"error\":
-    str(e),\n#             \"timestamp\": datetime.now().isoformat()\n#         }\n\n@mcp.tool()\ndef
-    find_device_by_mac(mac: str, site_id: str = None) -> Dict[str, Any]:\n    \"\"\"Find
-    a specific device by MAC address\"\"\"\n    if site_id is None:\n        sites
-    = get_correct_site_ids()\n        site_id = sites[0] if sites else \"default\"\n
-    \       \n    try:\n        # Search in clients\n        clients = paginate_integration(f\"/sites/{site_id}/clients\")\n
-    \       client_match = next((c for c in clients if c.get(\"mac\", \"\").lower()
-    == mac.lower()), None)\n        \n        # Search in devices\n        devices
-    = paginate_integration(f\"/sites/{site_id}/devices\")\n        device_match =
-    next((d for d in devices if d.get(\"mac\", \"\").lower() == mac.lower()), None)\n
-    \       \n        result = {\n            \"success\": True,\n            \"mac\":
-    mac,\n            \"site_id\": site_id,\n            \"found\": False,\n            \"client\":
-    client_match,\n            \"device\": device_match,\n            \"timestamp\":
-    datetime.now().isoformat()\n        }\n        \n        if client_match or device_match:\n
-    \           result[\"found\"] = True\n            result[\"type\"] = \"client\"
-    if client_match else \"device\"\n            result[\"data\"] = client_match or
-    device_match\n        \n        return result\n        \n    except Exception
-    as e:\n        return {\n            \"success\": False,\n            \"mac\":
-    mac,\n            \"site_id\": site_id,\n            \"error\": str(e),\n            \"timestamp\":
-    datetime.now().isoformat()\n        }\n\n@mcp.tool()\ndef list_hosts_cloud(page_size:
-    int = 100) -> Dict[str, Any]:\n    \"\"\"List hosts using UniFi Site Manager (cloud)
-    API\"\"\"\n    result = {\n        \"success\": False,\n        \"method\": \"cloud_api\",\n
-    \       \"data\": [],\n        \"error\": None,\n        \"api_used\": \"sitemanager_cloud\"\n
-    \   }\n    \n    if not (SM_BASE and SM_TOKEN):\n        result[\"error\"] = \"Cloud
-    API requires UNIFI_SITEMGR_BASE and UNIFI_SITEMGR_TOKEN\"\n        return result\n
-    \   \n    try:\n        headers = {\n            \"Accept\": \"application/json\",\n
-    \           \"X-API-KEY\": SM_TOKEN,\n            \"Content-Type\": \"application/json\"\n
-    \       }\n        \n        params = {\"limit\": page_size}\n        \n        url
-    = f\"{SM_BASE}/v1/hosts\"\n        validated_url = validate_url(url, \"cloud hosts
-    list\")\n        \n        resp = requests.get(validated_url, headers=headers,
-    params=params, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\n        \n        if
-    resp.status_code == 200:\n            data = resp.json()\n            result[\"success\"]
-    = True\n            result[\"data\"] = data.get(\"data\", data)\n            result[\"count\"]
-    = len(result[\"data\"])\n            result[\"raw_response\"] = data\n        else:\n
-    \           result[\"error\"] = f\"HTTP {resp.status_code}: {resp.text[:500]}\"\n
-    \           \n    except Exception as e:\n        result[\"error\"] = str(e)\n
-    \   \n    return result\n\n@mcp.tool()\ndef list_all_hosts(site_id: str = None,
-    include_cloud: bool = False) -> Dict[str, Any]:\n    \"\"\"Comprehensive host
-    listing from local controller and optionally cloud\"\"\"\n    if site_id is None:\n
-    \       sites = get_correct_site_ids()\n        site_id = sites[0] if sites else
-    \"default\"\n    \n    result = {\n        \"success\": False,\n        \"timestamp\":
-    datetime.now().isoformat(),\n        \"methods_tried\": [],\n        \"local\":
-    {},\n        \"cloud\": {},\n        \"combined_data\": [],\n        \"summary\":
-    {}\n    }\n    \n    # Try local Integration API first\n    local_result = list_hosts(site_id)\n
-    \   result[\"local\"] = local_result\n    result[\"methods_tried\"].append(\"integration_api\")\n
-    \   \n    # Try cloud API if requested and available\n    if include_cloud:\n
-    \       cloud_result = list_hosts_cloud()\n        result[\"cloud\"] = cloud_result\n
-    \       result[\"methods_tried\"].append(\"cloud_api\")\n    \n    # Combine data\n
-    \   combined_hosts = []\n    \n    if local_result.get(\"success\"):\n        #
-    Add local clients and devices\n        local_clients = local_result.get(\"clients\",
-    [])\n        local_devices = local_result.get(\"devices\", [])\n        \n        for
-    client in local_clients:\n            client[\"source\"] = \"local\"\n            combined_hosts.append(client)\n
-    \       \n        for device in local_devices:\n            device[\"source\"]
-    = \"local\"\n            combined_hosts.append(device)\n    \n    if include_cloud
-    and result[\"cloud\"].get(\"success\"):\n        # Add cloud hosts with a marker\n
-    \       cloud_hosts = result[\"cloud\"].get(\"data\", [])\n        for host in
-    cloud_hosts:\n            host[\"source\"] = \"cloud\"\n        combined_hosts.extend(cloud_hosts)\n
-    \   \n    result[\"combined_data\"] = combined_hosts\n    result[\"success\"]
-    = len(combined_hosts) > 0\n    \n    # Generate summary\n    result[\"summary\"]
-    = {\n        \"total_hosts\": len(combined_hosts),\n        \"local_success\":
-    local_result.get(\"success\", False),\n        \"cloud_success\": result[\"cloud\"].get(\"success\",
-    False) if include_cloud else \"not_requested\",\n        \"local_count\": len(local_result.get(\"clients\",
-    [])) + len(local_result.get(\"devices\", [])) if local_result.get(\"success\")
-    else 0,\n        \"cloud_count\": len(result[\"cloud\"].get(\"data\", [])) if
-    include_cloud and result[\"cloud\"].get(\"success\") else 0\n    }\n    \n    return
-    result\n\n@mcp.tool() \ndef find_host_everywhere(identifier: str, site_id: str
-    = None) -> Dict[str, Any]:\n    \"\"\"Search for a host by MAC, hostname, or name
-    across local and cloud\"\"\"\n    if site_id is None:\n        sites = get_correct_site_ids()\n
-    \       site_id = sites[0] if sites else \"default\"\n        \n    result = {\n
-    \       \"success\": False,\n        \"identifier\": identifier,\n        \"site_id\":
-    site_id,\n        \"matches\": [],\n        \"search_locations\": []\n    }\n
-    \   \n    try:\n        # Get comprehensive host list\n        all_hosts = list_all_hosts(site_id,
-    include_cloud=True)\n        \n        if not all_hosts.get(\"success\"):\n            result[\"error\"]
-    = \"Failed to retrieve host data\"\n            return result\n        \n        #
-    Search through all hosts\n        identifier_lower = identifier.lower()\n        matches
-    = []\n        \n        for host in all_hosts.get(\"combined_data\", []):\n            #
-    Check MAC address\n            if host.get(\"mac\", \"\").lower() == identifier_lower:\n
-    \               matches.append({\"match_type\": \"mac\", \"host\": host})\n                continue\n
-    \           \n            # Check hostname\n            hostname = host.get(\"hostname\")
-    or \"\"\n            if identifier_lower in hostname.lower():\n                matches.append({\"match_type\":
-    \"hostname\", \"host\": host})\n                continue\n                \n            #
-    Check name field\n            name = host.get(\"name\") or \"\"\n            if
-    identifier_lower in name.lower():\n                matches.append({\"match_type\":
-    \"name\", \"host\": host})\n                continue\n        \n        result[\"success\"]
-    = True\n        result[\"matches\"] = matches\n        result[\"match_count\"]
-    = len(matches)\n        result[\"search_locations\"] = all_hosts.get(\"methods_tried\",
-    [])\n        \n        return result\n        \n    except Exception as e:\n        result[\"error\"]
-    = str(e)\n        return result\n\n# ========= Prompt playbooks =========\n@mcp.prompt(\"how_to_check_unifi_health\")\ndef
-    how_to_check_unifi_health():\n    return {\n        \"description\": \"Check UniFi
-    controller health via Integration API.\",\n        \"messages\": [{\n            \"role\":
-    \"system\",\n            \"content\": (\n                \"To check UniFi health,
-    call 'health://unifi' (or 'unifi://health' / 'status://unifi'). \"\n                \"If
-    resources are unavailable, call the 'unifi_health' tool instead.\"\n            )\n
-    \       }]\n    }\n\n@mcp.prompt(\"how_to_check_system_status\")\ndef how_to_check_system_status():\n
-    \   return {\n        \"description\": \"Check overall UniFi system health and
-    status.\",\n        \"messages\": [{\n            \"role\": \"system\",\n            \"content\":
-    (\n                \"To check system status, use 'get_system_status' tool or 'status://system'
-    resource. \"\n                \"This provides comprehensive health info for all
-    UniFi services including devices, \"\n                \"clients, Access, and Protect
-    components.\"\n            )\n        }]\n    }\n\n@mcp.prompt(\"how_to_monitor_devices\")\ndef
-    how_to_monitor_devices():\n    return {\n        \"description\": \"Monitor device
-    health and identify issues.\",\n        \"messages\": [{\n            \"role\":
-    \"system\", \n            \"content\": (\n                \"Use 'get_device_health'
-    tool or 'status://devices' resource to get device health summary. \"\n                \"This
-    shows online/offline counts, device types, uptime stats, and highlights any offline
-    devices.\"\n            )\n        }]\n    }\n\n@mcp.prompt(\"how_to_check_network_activity\")\ndef
-    how_to_check_network_activity():\n    return {\n        \"description\": \"Check
-    current network activity and client usage.\",\n        \"messages\": [{\n            \"role\":
-    \"system\",\n            \"content\": (\n                \"Use 'get_client_activity'
-    tool or 'status://clients' resource to see active clients, \"\n                \"bandwidth
-    usage, connection types (wired/wireless), and top bandwidth users.\"\n            )\n
-    \       }]\n    }\n\n@mcp.prompt(\"how_to_find_device\")\ndef how_to_find_device():\n
-    \   return {\n        \"description\": \"Find a network device and flash its LEDs.\",\n
-    \       \"messages\": [{\"role\": \"system\",\n                      \"content\":
-    \"Search device via 'sites://{site_id}/search/devices/{query}', confirm, then
-    call 'locate_device' for ~30s.\"}]\n    }\n\n@mcp.prompt(\"how_to_block_client\")\ndef
-    how_to_block_client():\n    return {\n        \"description\": \"Find & block
-    a client safely.\",\n        \"messages\": [{\"role\": \"system\",\n                      \"content\":
-    \"List 'sites://{site_id}/clients/active', match MAC/host, confirm with user,
-    then call 'block_client'. Offer 'unblock_client' as a reversal.\"}]\n    }\n\n@mcp.prompt(\"how_to_toggle_wlan\")\ndef
-    how_to_toggle_wlan():\n    return {\n        \"description\": \"Toggle a WLAN
-    using Integration if available, else Legacy.\",\n        \"messages\": [{\"role\":
-    \"system\",\n                      \"content\": \"Fetch 'sites://{site_id}/wlans'.
-    If returns an error object with ok:false, request legacy creds, then call 'wlan_set_enabled_legacy'.\"}]\n
-    \   }\n\n@mcp.prompt(\"how_to_list_hosts\")\ndef how_to_list_hosts():\n    return
-    {\n        \"description\": \"List all hosts using local and cloud APIs.\",\n
-    \       \"messages\": [{\n            \"role\": \"system\",\n            \"content\":
-    (\n                \"Use 'working_list_hosts_example' for a complete working implementation,
-    \"\n                \"'list_hosts_api_format' for cloud API format, or 'list_hosts_fixed'
-    for local API with proper site discovery. \"\n                \"Run 'discover_sites'
-    first if you need to find valid site IDs.\"\n            )\n        }]\n    }\n\n@mcp.prompt(\"how_to_debug_api_issues\")\ndef
-    how_to_debug_api_issues():\n    return {\n        \"description\": \"Debug UniFi
-    API connectivity and configuration issues.\",\n        \"messages\": [{\n            \"role\":
-    \"system\",\n            \"content\": (\n                \"Use 'debug_api_connectivity'
-    to test all API endpoints and get troubleshooting recommendations. \"\n                \"Use
-    'discover_sites' to find correct site IDs. Check environment configuration with
-    the debug results.\"\n            )\n        }]\n    }\n\n# ========= Site Manager
-    API Tools (Cloud-based) =========\n\ndef call_sitemanager_api(endpoint: str, method:
-    str = \"GET\", body: Dict = None) -> Dict[str, Any]:\n    \"\"\"Helper to call
-    Site Manager API endpoints\"\"\"\n    if not (SM_BASE and SM_TOKEN):\n        return
-    {\n            \"success\": False,\n            \"error\": \"Site Manager API
-    requires UNIFI_SITEMGR_BASE and UNIFI_SITEMGR_TOKEN environment variables\"\n
-    \       }\n\n    try:\n        url = f\"{SM_BASE}{endpoint}\"\n        validated_url
-    = validate_url(url, \"sitemanager api call\")\n\n        headers = {\n            \"Accept\":
-    \"application/json\",\n            \"X-API-KEY\": SM_TOKEN,\n            \"Content-Type\":
-    \"application/json\"\n        }\n\n        if method == \"POST\":\n            resp
-    = requests.post(validated_url, headers=headers, json=body, verify=True, timeout=REQUEST_TIMEOUT_S)\n
-    \       else:\n            resp = requests.get(validated_url, headers=headers,
-    verify=True, timeout=REQUEST_TIMEOUT_S)\n\n        if resp.status_code == 200:\n
-    \           data = resp.json()\n            return {\n                \"success\":
-    True,\n                \"data\": data.get(\"data\", data),\n                \"count\":
-    len(data.get(\"data\", [])) if isinstance(data.get(\"data\"), list) else None,\n
-    \               \"raw_response\": data\n            }\n        elif resp.status_code
-    == 429:\n            return {\n                \"success\": False,\n                \"error\":
-    f\"Rate limit exceeded. Retry after: {resp.headers.get('Retry-After', 'unknown')}
-    seconds\"\n            }\n        else:\n            return {\n                \"success\":
-    False,\n                \"error\": f\"HTTP {resp.status_code}: {resp.text[:500]}\"\n
-    \           }\n    except Exception as e:\n        return {\n            \"success\":
-    False,\n            \"error\": str(e)\n        }\n\n@mcp.tool()\ndef list_active_clients()
-    -> Dict[str, Any]:\n    \"\"\"\n    List all active clients across all sites using
-    Site Manager API.\n    Returns client statistics including WiFi/wired breakdown.\n
-    \   Uses cloud API - no site_id needed.\n    \"\"\"\n    # Use /v1/sites for real-time
-    client statistics\n    result = call_sitemanager_api(\"/v1/sites\")\n\n    if
-    result.get(\"success\"):\n        sites = result.get(\"data\", [])\n\n        if
-    not sites:\n            return {\n                \"success\": False,\n                \"error\":
-    \"No sites found\",\n                \"timestamp\": datetime.now().isoformat()\n
-    \           }\n\n        # Use the first site's statistics\n        site = sites[0]\n
-    \       stats = site.get(\"statistics\", {}).get(\"counts\", {})\n\n        client_summary
-    = {\n            \"wifi_clients\": stats.get(\"wifiClient\", 0),\n            \"wired_clients\":
-    stats.get(\"wiredClient\", 0),\n            \"guest_clients\": stats.get(\"guestClient\",
-    0),\n            \"total_clients\": stats.get(\"wifiClient\", 0) + stats.get(\"wiredClient\",
-    0),\n            \"site_name\": site.get(\"meta\", {}).get(\"name\", \"default\")\n
-    \       }\n\n        return {\n            \"success\": True,\n            \"clients\":
-    client_summary,\n            \"count\": client_summary[\"total_clients\"],\n            \"timestamp\":
-    datetime.now().isoformat(),\n            \"api_used\": \"sitemanager_cloud_sites\"\n
-    \       }\n\n    return result\n\n@mcp.tool()\ndef get_device_health() -> Dict[str,
-    Any]:\n    \"\"\"\n    Get health status of all UniFi devices (APs, switches,
-    gateways).\n    Returns device status, uptime, CPU, memory, connectivity.\n    Uses
-    Site Manager cloud API (/v1/sites endpoint for real-time statistics).\n    \"\"\"\n
-    \   # Use /v1/sites which has real-time statistics instead of /v1/devices which
-    can be stale\n    result = call_sitemanager_api(\"/v1/sites\")\n\n    if result.get(\"success\"):\n
-    \       sites = result.get(\"data\", [])\n\n        if not sites:\n            return
-    {\n                \"success\": False,\n                \"error\": \"No sites
-    found\",\n                \"timestamp\": datetime.now().isoformat()\n            }\n\n
-    \       # Use the first site's statistics (most users have one site)\n        site
-    = sites[0]\n        stats = site.get(\"statistics\", {}).get(\"counts\", {})\n\n
-    \       health_summary = {\n            \"total_devices\": stats.get(\"totalDevice\",
-    0),\n            \"online\": stats.get(\"totalDevice\", 0) - stats.get(\"offlineDevice\",
-    0),\n            \"offline\": stats.get(\"offlineDevice\", 0),\n            \"wifi_devices\":
-    stats.get(\"wifiDevice\", 0),\n            \"wired_devices\": stats.get(\"wiredDevice\",
-    0),\n            \"gateway_devices\": stats.get(\"gatewayDevice\", 0),\n            \"pending_updates\":
-    stats.get(\"pendingUpdateDevice\", 0),\n            \"active_clients\": {\n                \"wifi\":
-    stats.get(\"wifiClient\", 0),\n                \"wired\": stats.get(\"wiredClient\",
-    0),\n                \"guest\": stats.get(\"guestClient\", 0),\n                \"total\":
-    stats.get(\"wifiClient\", 0) + stats.get(\"wiredClient\", 0)\n            },\n
-    \           \"site_name\": site.get(\"meta\", {}).get(\"name\", \"default\"),\n
-    \           \"critical_notifications\": stats.get(\"criticalNotification\", 0)\n
-    \       }\n\n        return {\n            \"success\": True,\n            \"health\":
-    health_summary,\n            \"timestamp\": datetime.now().isoformat(),\n            \"api_used\":
-    \"sitemanager_cloud_sites\"\n        }\n\n    return result\n\n@mcp.tool()\ndef
-    get_client_activity() -> Dict[str, Any]:\n    \"\"\"\n    Get recent client connection
-    activity and bandwidth usage.\n    Uses Site Manager cloud API to provide network
-    statistics.\n    \"\"\"\n    # Get hosts which contain site and device information\n
-    \   hosts_result = call_sitemanager_api(\"/v1/hosts\")\n    devices_result = call_sitemanager_api(\"/v1/devices\")\n\n
-    \   if not hosts_result.get(\"success\"):\n        return hosts_result\n\n    activity
-    = {\n        \"hosts\": hosts_result.get(\"data\", []),\n        \"host_count\":
-    len(hosts_result.get(\"data\", [])),\n        \"devices\": devices_result.get(\"data\",
-    []) if devices_result.get(\"success\") else [],\n        \"device_count\": len(devices_result.get(\"data\",
-    [])) if devices_result.get(\"success\") else 0,\n        \"timestamp\": datetime.now().isoformat(),\n
-    \       \"api_used\": \"sitemanager_cloud\"\n    }\n\n    return {\n        \"success\":
-    True,\n        \"activity\": activity\n    }\n\n@mcp.tool()\ndef get_sites() ->
-    Dict[str, Any]:\n    \"\"\"\n    List all UniFi sites managed under this account.\n
-    \   Uses Site Manager cloud API.\n    \"\"\"\n    result = call_sitemanager_api(\"/v1/sites\")\n\n
-    \   if result.get(\"success\"):\n        return {\n            \"success\": True,\n
-    \           \"sites\": result.get(\"data\", []),\n            \"count\": result.get(\"count\",
-    0),\n            \"timestamp\": datetime.now().isoformat(),\n            \"api_used\":
-    \"sitemanager_cloud\"\n        }\n\n    return result\n\n@mcp.tool()\ndef get_isp_metrics(interval:
-    str = \"5m\", sites: List[str] = None) -> Dict[str, Any]:\n    \"\"\"\n    Query
-    ISP performance metrics (latency, packet loss, bandwidth).\n    Uses Site Manager
-    cloud API (POST /ea/isp-metrics/:type/query).\n\n    Args:\n        interval:
-    Metric interval - either \"5m\" (24hrs retention) or \"1h\" (30 days retention)\n
-    \       sites: Optional list of site IDs to query. If None, queries all accessible
-    sites.\n    \"\"\"\n    query_body = {\n        \"sites\": sites if sites else
-    []\n    }\n\n    result = call_sitemanager_api(\n        f\"/ea/isp-metrics/{interval}/query\",\n
-    \       method=\"POST\",\n        body=query_body\n    )\n\n    if result.get(\"success\"):\n
-    \       return {\n            \"success\": True,\n            \"interval\": interval,\n
-    \           \"retention\": \"24 hours\" if interval == \"5m\" else \"30 days\",\n
-    \           \"sites_queried\": len(sites) if sites else \"all\",\n            \"data\":
-    result.get(\"data\", {}),\n            \"status\": result.get(\"raw_response\",
-    {}).get(\"status\", \"success\"),\n            \"timestamp\": datetime.now().isoformat(),\n
-    \           \"api_used\": \"sitemanager_cloud\"\n        }\n\n    return result\n\n@mcp.tool()\ndef
-    get_host_by_id(host_id: str) -> Dict[str, Any]:\n    \"\"\"\n    Get detailed
-    information about a specific UniFi host by ID.\n    Uses Site Manager cloud API
-    (GET /v1/hosts/:id).\n\n    Args:\n        host_id: Unique host identifier\n    \"\"\"\n
-    \   result = call_sitemanager_api(f\"/v1/hosts/{host_id}\")\n\n    if result.get(\"success\"):\n
-    \       return {\n            \"success\": True,\n            \"host\": result.get(\"data\",
-    {}),\n            \"timestamp\": datetime.now().isoformat(),\n            \"api_used\":
-    \"sitemanager_cloud\"\n        }\n\n    return result\n\n@mcp.tool()\ndef list_sd_wan_configs()
-    -> Dict[str, Any]:\n    \"\"\"\n    List all SD-WAN configurations for the UI
-    account.\n    Uses Site Manager cloud API (GET /ea/sd-wan-configs).\n    Early
-    Access endpoint - 100 requests/minute limit.\n    \"\"\"\n    result = call_sitemanager_api(\"/ea/sd-wan-configs\")\n\n
-    \   if result.get(\"success\"):\n        return {\n            \"success\": True,\n
-    \           \"configs\": result.get(\"data\", []),\n            \"count\": result.get(\"count\",
-    0),\n            \"timestamp\": datetime.now().isoformat(),\n            \"api_used\":
-    \"sitemanager_cloud_ea\",\n            \"rate_limit\": \"100 requests/minute\"\n
-    \       }\n\n    return result\n\n@mcp.tool()\ndef get_sd_wan_config_by_id(config_id:
-    str) -> Dict[str, Any]:\n    \"\"\"\n    Get detailed information about a specific
-    SD-WAN configuration.\n    Uses Site Manager cloud API (GET /ea/sd-wan-configs/:id).\n
-    \   Early Access endpoint - 100 requests/minute limit.\n\n    Args:\n        config_id:
-    SD-WAN configuration identifier\n    \"\"\"\n    result = call_sitemanager_api(f\"/ea/sd-wan-configs/{config_id}\")\n\n
-    \   if result.get(\"success\"):\n        return {\n            \"success\": True,\n
-    \           \"config\": result.get(\"data\", {}),\n            \"timestamp\":
-    datetime.now().isoformat(),\n            \"api_used\": \"sitemanager_cloud_ea\"\n
-    \       }\n\n    return result\n\n@mcp.tool()\ndef get_sd_wan_config_status(config_id:
-    str) -> Dict[str, Any]:\n    \"\"\"\n    Get deployment status, progress, and
-    errors for an SD-WAN configuration.\n    Uses Site Manager cloud API (GET /ea/sd-wan-configs/:id/status).\n
-    \   Early Access endpoint - 100 requests/minute limit.\n\n    Args:\n        config_id:
-    SD-WAN configuration identifier\n    \"\"\"\n    result = call_sitemanager_api(f\"/ea/sd-wan-configs/{config_id}/status\")\n\n
-    \   if result.get(\"success\"):\n        return {\n            \"success\": True,\n
-    \           \"status\": result.get(\"data\", {}),\n            \"timestamp\":
-    datetime.now().isoformat(),\n            \"api_used\": \"sitemanager_cloud_ea\"\n
-    \       }\n\n    return result\n\n# ========= Entrypoint =========\nif __name__
-    == \"__main__\":\n    print(\"\U0001F680 UniFi MCP — Integration + Legacy + Access
-    + Protect (+ Site Manager stubs)\")\n    print(f\"→ Controller: https://{UNIFI_HOST}:{UNIFI_PORT}
-    \ TLS verify={VERIFY_TLS}\")\n    print(f\"\U0001F512 SSRF Protection: Allowed
-    hosts = {', '.join(ALLOWED_HOSTS)}\")\n    \n    if not UNIFI_API_KEY:\n        print(\"⚠️
-    UNIFI_API_KEY not set — Integration/Access/Protect key-based calls may fail.\")\n
-    \   \n    # Show discovered sites on startup\n    sites = get_correct_site_ids()\n
-    \   if sites:\n        print(f\"\U0001F3E2 Discovered sites: {', '.join(sites)}\")\n
-    \   else:\n        print(\"⚠️ No sites discovered - check API credentials\")\n
-    \   \n    mcp.run(transport=\"stdio\")\n"
 kind: ConfigMap
 metadata:
-  annotations:
-    kubectl.kubernetes.io/last-applied-configuration: "{\"apiVersion\":\"v1\",\"data\":{\"main.py\":\"#
-      main.py\\n# UniFi MCP Server — Integration + Legacy + Access + Protect (+ Site
-      Manager stubs)\\n# - Rich resources for reads, curated tools for safe actions,
-      prompt playbooks\\n# - Dual-mode auth (API key first; fall back to legacy cookie
-      where needed)\\n# - Includes health alias (health://unifi) and debug_registry
-      tool\\n# - Safer URL building to avoid line-wrap identifier breaks\\n# - Enhanced
-      status management and list hosts functionality\\n# - SECURITY: SSRF protection
-      with URL validation\\n\\nfrom typing import Any, Dict, List, Optional\\nfrom
-      datetime import datetime, timedelta\\nfrom dataclasses import dataclass\\nfrom
-      urllib.parse import urlparse\\nimport ipaddress\\nimport os, json, requests,
-      urllib3\\nfrom pathlib import Path\\nfrom mcp.server.fastmcp import FastMCP\\n\\nurllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\\n\\n#
-      ========= Load Environment Variables from secrets.env =========\\ndef load_env_file(env_file:
-      str = \\\"secrets.env\\\"):\\n    \\\"\\\"\\\"Load environment variables from
-      a .env file\\\"\\\"\\\"\\n    env_path = Path(env_file)\\n    if env_path.exists():\\n
-      \       print(f\\\"\U0001F4C4 Loading environment from: {env_path.absolute()}\\\")\\n
-      \       with open(env_path, 'r') as f:\\n            for line_num, line in enumerate(f,
-      1):\\n                line = line.strip()\\n                # Skip empty lines
-      and comments\\n                if not line or line.startswith('#'):\\n                    continue\\n
-      \               \\n                # Parse KEY=VALUE format\\n                if
-      '=' in line:\\n                    key, value = line.split('=', 1)\\n                    key
-      = key.strip()\\n                    value = value.strip()\\n                    \\n
-      \                   # Remove quotes if present\\n                    if (value.startswith('\\\"')
-      and value.endswith('\\\"')) or \\\\\\n                       (value.startswith(\\\"'\\\")
-      and value.endswith(\\\"'\\\")):\\n                        value = value[1:-1]\\n
-      \                   \\n                    # Set environment variable if not
-      already set\\n                    if key not in os.environ:\\n                        os.environ[key]
-      = value\\n                        print(f\\\"  ✓ Loaded: {key}\\\")\\n                    else:\\n
-      \                       print(f\\\"  ⚠️  Skipped {key} (already set in environment)\\\")\\n
-      \               else:\\n                    print(f\\\"  ⚠️  Invalid format
-      on line {line_num}: {line}\\\")\\n    else:\\n        print(f\\\"⚠️  Environment
-      file not found: {env_path.absolute()}\\\")\\n        print(\\\"   Create secrets.env
-      with your UniFi credentials\\\")\\n\\n# Load environment variables first\\nload_env_file()\\n\\n#
-      ========= Configuration =========\\nUNIFI_API_KEY   = os.getenv(\\\"UNIFI_API_KEY\\\",
-      \\\"API\\\")\\nUNIFI_HOST      = os.getenv(\\\"UNIFI_GATEWAY_HOST\\\", \\\"HOST\\\")\\nUNIFI_PORT
-      \     = os.getenv(\\\"UNIFI_GATEWAY_PORT\\\", \\\"443\\\")\\nVERIFY_TLS      =
-      os.getenv(\\\"UNIFI_VERIFY_TLS\\\", \\\"false\\\").lower() in (\\\"1\\\", \\\"true\\\",
-      \\\"yes\\\")\\n\\n# Legacy credentials (optional; enable for config endpoints
-      not in Integration API)\\nLEGACY_USER     = os.getenv(\\\"UNIFI_USERNAME\\\",
-      \\\"USERNAME\\\")\\nLEGACY_PASS     = os.getenv(\\\"UNIFI_PASSWORD\\\", \\\"PASSWORD\\\")\\n\\n#
-      Site Manager (cloud) — PRIMARY API (api.ui.com)\\nSM_BASE         = os.getenv(\\\"UNIFI_SITEMGR_BASE\\\",
-      \\\"https://api.ui.com\\\").rstrip(\\\"/\\\")\\nSM_TOKEN        = os.getenv(\\\"UNIFI_SITEMGR_TOKEN\\\",
-      \\\"\\\")\\n\\n# Failover local controller address\\nFAILOVER_HOST   = os.getenv(\\\"UNIFI_FAILOVER_HOST\\\",
-      \\\"10.88.140.144\\\")\\nFAILOVER_PORT   = os.getenv(\\\"UNIFI_FAILOVER_PORT\\\",
-      \\\"443\\\")\\n\\n# API mode: \\\"cloud\\\" (primary) or \\\"local\\\" (failover)\\nAPI_MODE
-      \       = os.getenv(\\\"UNIFI_API_MODE\\\", \\\"cloud\\\")\\n\\n# Base URLs\\nNET_INTEGRATION_BASE
-      = f\\\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/network/integrations/v1\\\"\\nLEGACY_BASE
-      \         = f\\\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/network/api\\\"\\nACCESS_BASE
-      \         = f\\\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/access/api/v1\\\"\\nPROTECT_BASE
-      \        = f\\\"https://{UNIFI_HOST}:{UNIFI_PORT}/proxy/protect/api\\\"\\n\\nREQUEST_TIMEOUT_S
-      \   = int(os.getenv(\\\"UNIFI_TIMEOUT_S\\\", \\\"15\\\"))\\n\\nmcp = FastMCP(\\\"unifi\\\")\\n\\n#
-      ========= Security: URL Validation (SSRF Protection) =========\\nclass UniFiHTTPError(RuntimeError):\\n
-      \   pass\\n\\n# Allowed hosts for SSRF protection\\nALLOWED_HOSTS = {\\n    UNIFI_HOST,\\n
-      \   \\\"api.ui.com\\\",  # For cloud API\\n    FAILOVER_HOST,  # Local failover
-      controller\\n}\\n\\n# Add any additional allowed hosts from environment\\nif
-      SM_BASE:\\n    sm_host = urlparse(SM_BASE).hostname\\n    if sm_host:\\n        ALLOWED_HOSTS.add(sm_host)\\n\\ndef
-      validate_url(url: str, purpose: str = \\\"request\\\") -\\u003e str:\\n    \\\"\\\"\\\"\\n
-      \   Validate URL to prevent SSRF attacks.\\n    Only allows requests to configured
-      UniFi hosts.\\n    \\\"\\\"\\\"\\n    try:\\n        parsed = urlparse(url)\\n
-      \       \\n        # Must have scheme and netloc\\n        if not parsed.scheme
-      or not parsed.netloc:\\n            raise UniFiHTTPError(f\\\"Invalid URL for
-      {purpose}: missing scheme or host\\\")\\n        \\n        # Only allow https
-      (or http for local development)\\n        if parsed.scheme not in (\\\"https\\\",
-      \\\"http\\\"):\\n            raise UniFiHTTPError(f\\\"Invalid URL scheme for
-      {purpose}: {parsed.scheme}\\\")\\n        \\n        # Extract hostname (remove
-      port if present)\\n        hostname = parsed.hostname\\n        if not hostname:\\n
-      \           raise UniFiHTTPError(f\\\"Invalid URL for {purpose}: cannot extract
-      hostname\\\")\\n        \\n        # Check if hostname is in allowed list\\n
-      \       if hostname not in ALLOWED_HOSTS:\\n            raise UniFiHTTPError(\\n
-      \               f\\\"URL host not allowed for {purpose}: {hostname}. \\\"\\n
-      \               f\\\"Allowed hosts: {', '.join(ALLOWED_HOSTS)}\\\"\\n            )\\n
-      \       \\n        # Additional check: prevent requests to private IP ranges
-      if using IP\\n        try:\\n            ip = ipaddress.ip_address(hostname)\\n
-      \           # Allow only if it's the configured UNIFI_HOST\\n            if
-      hostname != UNIFI_HOST:\\n                raise UniFiHTTPError(\\n                    f\\\"Direct
-      IP access not allowed for {purpose}: {hostname}\\\"\\n                )\\n        except
-      ValueError:\\n            # Not an IP address, which is fine\\n            pass\\n
-      \       \\n        return url\\n        \\n    except Exception as e:\\n        if
-      isinstance(e, UniFiHTTPError):\\n            raise\\n        raise UniFiHTTPError(f\\\"URL
-      validation failed for {purpose}: {str(e)}\\\")\\n\\n# ========= HTTP helpers
-      (with SSRF protection) =========\\ndef _raise_for(r: requests.Response) -\\u003e
-      Dict[str, Any]:\\n    try:\\n        r.raise_for_status()\\n        return r.json()
-      if r.text.strip() else {}\\n    except requests.exceptions.HTTPError as e:\\n
-      \       body = (r.text or \\\"\\\")[:800]\\n        raise UniFiHTTPError(f\\\"{r.request.method}
-      {r.url} -\\u003e {r.status_code} {r.reason}; body: {body}\\\") from e\\n\\ndef
-      _h_key() -\\u003e Dict[str, str]:\\n    return {\\\"X-API-Key\\\": UNIFI_API_KEY,
-      \\\"Content-Type\\\": \\\"application/json\\\"}\\n\\ndef _get(url: str, headers:
-      Dict[str, str], params=None, timeout=REQUEST_TIMEOUT_S) -\\u003e Dict[str, Any]:\\n
-      \   validated_url = validate_url(url, \\\"GET request\\\")\\n    return _raise_for(requests.get(validated_url,
-      headers=headers, params=params, verify=VERIFY_TLS, timeout=timeout))\\n\\ndef
-      _post(url: str, headers: Dict[str, str], body=None, timeout=REQUEST_TIMEOUT_S)
-      -\\u003e Dict[str, Any]:\\n    validated_url = validate_url(url, \\\"POST request\\\")\\n
-      \   return _raise_for(requests.post(validated_url, headers=headers, json=body,
-      verify=VERIFY_TLS, timeout=timeout))\\n\\n# Legacy session (cookie auth)\\nLEGACY
-      = requests.Session()\\n\\ndef legacy_login():\\n    if not (LEGACY_USER and
-      LEGACY_PASS):\\n        raise UniFiHTTPError(\\\"Legacy login requires UNIFI_USERNAME
-      and UNIFI_PASSWORD.\\\")\\n\\n    # Clear any existing session cookies to avoid
-      403 when re-authenticating\\n    # The UniFi controller rejects login attempts
-      if already authenticated\\n    LEGACY.cookies.clear()\\n\\n    login_url = f\\\"https://{UNIFI_HOST}:{UNIFI_PORT}/api/auth/login\\\"\\n
-      \   validated_url = validate_url(login_url, \\\"legacy login\\\")\\n\\n    #
-      Match curl headers exactly to avoid User-Agent blocking\\n    headers = {\\n
-      \       \\\"User-Agent\\\": \\\"curl/8.5.0\\\",\\n        \\\"Accept\\\": \\\"application/json\\\",\\n
-      \       \\\"Content-Type\\\": \\\"application/json\\\"\\n    }\\n\\n    # Debug
-      logging\\n    import sys\\n    print(f\\\"[DEBUG] Login URL: {validated_url}\\\",
-      file=sys.stderr)\\n    print(f\\\"[DEBUG] Headers: {headers}\\\", file=sys.stderr)\\n
-      \   print(f\\\"[DEBUG] Username: {LEGACY_USER}\\\", file=sys.stderr)\\n    print(f\\\"[DEBUG]
-      Session cookies before (after clear): {dict(LEGACY.cookies)}\\\", file=sys.stderr)\\n\\n
-      \   r = LEGACY.post(\\n        validated_url,\\n        json={\\\"username\\\":
-      LEGACY_USER, \\\"password\\\": LEGACY_PASS},\\n        headers=headers,\\n        verify=VERIFY_TLS,\\n
-      \       timeout=REQUEST_TIMEOUT_S,\\n    )\\n\\n    print(f\\\"[DEBUG] Response
-      status: {r.status_code}\\\", file=sys.stderr)\\n    print(f\\\"[DEBUG] Response
-      headers: {dict(r.headers)}\\\", file=sys.stderr)\\n    print(f\\\"[DEBUG] Session
-      cookies after: {dict(LEGACY.cookies)}\\\", file=sys.stderr)\\n\\n    _raise_for(r)\\n\\ndef
-      legacy_get(path: str, params=None) -\\u003e Dict[str, Any]:\\n    if not LEGACY.cookies:\\n
-      \       legacy_login()\\n    \\n    url = f\\\"{LEGACY_BASE}{path}\\\"\\n    validated_url
-      = validate_url(url, \\\"legacy GET\\\")\\n    \\n    r = LEGACY.get(validated_url,
-      params=params, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n    return _raise_for(r)\\n\\ndef
-      legacy_post(path: str, body=None) -\\u003e Dict[str, Any]:\\n    if not LEGACY.cookies:\\n
-      \       legacy_login()\\n    \\n    url = f\\\"{LEGACY_BASE}{path}\\\"\\n    validated_url
-      = validate_url(url, \\\"legacy POST\\\")\\n    \\n    r = LEGACY.post(validated_url,
-      json=body, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n    return _raise_for(r)\\n\\n#
-      ========= UniFi Protect helpers (with SSRF protection) =========\\ndef protect_get(path:
-      str, params=None) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Try API
-      key first; if unauthorized, fall back to legacy cookie session.\\n    \\\"\\\"\\\"\\n
-      \   url = f\\\"{PROTECT_BASE}{path}\\\"\\n    validated_url = validate_url(url,
-      \\\"Protect GET\\\")\\n    \\n    try:\\n        r = requests.get(validated_url,
-      headers=_h_key(), params=params, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n
-      \       if r.status_code == 200:\\n            return _raise_for(r)\\n        if
-      r.status_code not in (401, 403):\\n            return _raise_for(r)\\n    except
-      Exception:\\n        pass  # fall back\\n    \\n    if not LEGACY.cookies:\\n
-      \       legacy_login()\\n    r = LEGACY.get(validated_url, params=params, verify=VERIFY_TLS,
-      timeout=REQUEST_TIMEOUT_S)\\n    return _raise_for(r)\\n\\ndef protect_post(path:
-      str, body=None) -\\u003e Dict[str, Any]:\\n    url = f\\\"{PROTECT_BASE}{path}\\\"\\n
-      \   validated_url = validate_url(url, \\\"Protect POST\\\")\\n    \\n    try:\\n
-      \       r = requests.post(validated_url, headers=_h_key(), json=body, verify=VERIFY_TLS,
-      timeout=REQUEST_TIMEOUT_S)\\n        if r.status_code in (200, 204):\\n            return
-      _raise_for(r)\\n        if r.status_code not in (401, 403):\\n            return
-      _raise_for(r)\\n    except Exception:\\n        pass\\n    \\n    if not LEGACY.cookies:\\n
-      \       legacy_login()\\n    r = LEGACY.post(validated_url, json=body, verify=VERIFY_TLS,
-      timeout=REQUEST_TIMEOUT_S)\\n    return _raise_for(r)\\n\\n# ========= Utilities
-      =========\\ndef paginate_integration(path: str, extra_params: Optional[Dict[str,
-      Any]] = None) -\\u003e List[Dict[str, Any]]:\\n    params = {\\\"limit\\\":
-      200, \\\"offset\\\": 0}\\n    if extra_params:\\n        params.update(extra_params)\\n
-      \   items: List[Dict[str, Any]] = []\\n    while True:\\n        resp = _get(f\\\"{NET_INTEGRATION_BASE}{path}\\\",
-      _h_key(), params=params)\\n        data = resp.get(\\\"data\\\", [])\\n        items.extend(data)\\n
-      \       count, limit, total = resp.get(\\\"count\\\", 0), resp.get(\\\"limit\\\",
-      0), resp.get(\\\"totalCount\\\", 0)\\n        if count != limit or total \\u003c=
-      len(items):\\n            break\\n        params[\\\"offset\\\"] += limit\\n
-      \   return items\\n\\ndef get_devices_with_fallback(site_id: str) -\\u003e List[Dict[str,
-      Any]]:\\n    \\\"\\\"\\\"Get devices using Integration API first, fallback to
-      Legacy API\\\"\\\"\\\"\\n    try:\\n        return paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n
-      \   except Exception as e:\\n        # Fallback to Legacy API\\n        try:\\n
-      \           legacy_login()\\n            resp = legacy_get(f\\\"/s/{site_id}/stat/device\\\")\\n
-      \           return resp.get(\\\"data\\\", [])\\n        except Exception as
-      e2:\\n            raise Exception(f\\\"Integration API: {str(e)}, Legacy API:
-      {str(e2)}\\\")\\n\\ndef get_clients_with_fallback(site_id: str) -\\u003e List[Dict[str,
-      Any]]:\\n    \\\"\\\"\\\"Get clients using Integration API first, fallback to
-      Legacy API\\\"\\\"\\\"\\n    try:\\n        return paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n
-      \   except Exception as e:\\n        # Fallback to Legacy API\\n        try:\\n
-      \           legacy_login()\\n            resp = legacy_get(f\\\"/s/{site_id}/stat/sta\\\")\\n
-      \           return resp.get(\\\"data\\\", [])\\n        except Exception as
-      e2:\\n            raise Exception(f\\\"Integration API: {str(e)}, Legacy API:
-      {str(e2)}\\\")\\n\\n# ========= UniFi Health Functions =========\\ndef _health_check()
-      -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Minimal controller sanity
-      check. Try Cloud API first (primary), failback to local.\\n    Returns ok: True
-      with sites count, or ok: False with error.\\n    \\\"\\\"\\\"\\n    # Try Cloud
-      API first (primary - api.ui.com)\\n    if SM_BASE and SM_TOKEN:\\n        try:\\n
-      \           headers = {\\\"Accept\\\": \\\"application/json\\\", \\\"X-API-KEY\\\":
-      SM_TOKEN}\\n            url = f\\\"{SM_BASE}/v1/sites\\\"\\n            validated_url
-      = validate_url(url, \\\"cloud health check\\\")\\n            resp = requests.get(validated_url,
-      headers=headers, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n            if
-      resp.status_code == 200:\\n                data = resp.json()\\n                sites
-      = data.get(\\\"data\\\", [])\\n                return {\\n                    \\\"ok\\\":
-      True,\\n                    \\\"cloud_sites_count\\\": len(sites),\\n                    \\\"base\\\":
-      SM_BASE,\\n                    \\\"verify_tls\\\": VERIFY_TLS,\\n                    \\\"api_mode\\\":
-      \\\"cloud\\\",\\n                    \\\"failover_available\\\": f\\\"https://{FAILOVER_HOST}:{FAILOVER_PORT}\\\"\\n
-      \               }\\n        except Exception as cloud_err:\\n            print(f\\\"[Health]
-      Cloud API failed: {cloud_err}, trying failover...\\\")\\n\\n    # Failover:
-      Try local Integration API\\n    try:\\n        resp = _get(\\\"/\\\".join([NET_INTEGRATION_BASE,
-      \\\"sites\\\"]), _h_key())\\n        return {\\n            \\\"ok\\\": True,\\n
-      \           \\\"integration_sites_count\\\": resp.get(\\\"count\\\"),\\n            \\\"base\\\":
-      NET_INTEGRATION_BASE,\\n            \\\"verify_tls\\\": VERIFY_TLS,\\n            \\\"api_mode\\\":
-      \\\"integration_failover\\\"\\n        }\\n    except Exception as e:\\n        #
-      Failover: Try Legacy API (older UniFi OS/firmware)\\n        try:\\n            #
-      legacy_get will handle login automatically if needed\\n            resp = legacy_get(\\\"/self/sites\\\")\\n
-      \           sites = resp.get(\\\"data\\\", [])\\n            return {\\n                \\\"ok\\\":
-      True,\\n                \\\"legacy_sites_count\\\": len(sites),\\n                \\\"base\\\":
-      LEGACY_BASE,\\n                \\\"verify_tls\\\": VERIFY_TLS,\\n                \\\"api_mode\\\":
-      \\\"legacy_failover\\\"\\n            }\\n        except Exception as e2:\\n
-      \           return {\\n                \\\"ok\\\": False,\\n                \\\"error\\\":
-      f\\\"Cloud API failed, Integration API: {str(e)}, Legacy API: {str(e2)}\\\",\\n
-      \               \\\"base\\\": f\\\"{SM_BASE} (primary), {NET_INTEGRATION_BASE}
-      (failover)\\\",\\n                \\\"verify_tls\\\": VERIFY_TLS\\n            }\\n\\n#
-      ========= Enhanced List Hosts Functions =========\\ndef list_hosts_api_ui_com_format():\\n
-      \   \\\"\\\"\\\"\\n    Exact implementation matching your provided examples:\\n
-      \   - import http.client approach  \\n    - import requests approach\\n    Both
-      for https://api.ui.com/v1/hosts\\n    \\\"\\\"\\\"\\n    results = {\\n        \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n        \\\"http_client_method\\\": {},\\n        \\\"requests_method\\\":
-      {},\\n        \\\"unified_response\\\": {}\\n    }\\n    \\n    # Method 1:
-      Using http.client (your first example)\\n    try:\\n        import http.client\\n
-      \       conn = http.client.HTTPSConnection(\\\"api.ui.com\\\")\\n        payload
-      = ''\\n        headers = {\\n            'Accept': 'application/json',\\n            'X-API-Key':
-      SM_TOKEN  # Use your SM_TOKEN as the X-API-Key\\n        }\\n        conn.request(\\\"GET\\\",
-      \\\"/v1/hosts\\\", payload, headers)\\n        res = conn.getresponse()\\n        data
-      = res.read()\\n        \\n        results[\\\"http_client_method\\\"] = {\\n
-      \           \\\"success\\\": res.status == 200,\\n            \\\"status_code\\\":
-      res.status,\\n            \\\"raw_data\\\": data.decode(\\\"utf-8\\\"),\\n            \\\"parsed_data\\\":
-      json.loads(data.decode(\\\"utf-8\\\")) if res.status == 200 else None\\n        }\\n
-      \       conn.close()\\n        \\n    except Exception as e:\\n        results[\\\"http_client_method\\\"]
-      = {\\\"error\\\": str(e)}\\n    \\n    # Method 2: Using requests (your second
-      example) - with validation\\n    try:\\n        url = \\\"https://api.ui.com/v1/hosts\\\"\\n
-      \       validated_url = validate_url(url, \\\"cloud API hosts list\\\")\\n        \\n
-      \       payload = {}\\n        headers = {\\n            'Accept': 'application/json',\\n
-      \           'X-API-Key': SM_TOKEN  # Use your SM_TOKEN as the X-API-Key\\n        }\\n
-      \       response = requests.request(\\\"GET\\\", validated_url, headers=headers,
-      data=payload, \\n                                  verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n
-      \       \\n        results[\\\"requests_method\\\"] = {\\n            \\\"success\\\":
-      response.status_code == 200,\\n            \\\"status_code\\\": response.status_code,\\n
-      \           \\\"response_text\\\": response.text,\\n            \\\"parsed_data\\\":
-      response.json() if response.status_code == 200 else None\\n        }\\n        \\n
-      \   except Exception as e:\\n        results[\\\"requests_method\\\"] = {\\\"error\\\":
-      str(e)}\\n    \\n    # Create unified response\\n    if results[\\\"requests_method\\\"].get(\\\"success\\\"):\\n
-      \       results[\\\"unified_response\\\"] = results[\\\"requests_method\\\"][\\\"parsed_data\\\"]\\n
-      \   elif results[\\\"http_client_method\\\"].get(\\\"success\\\"):\\n        results[\\\"unified_response\\\"]
-      = results[\\\"http_client_method\\\"][\\\"parsed_data\\\"]\\n    \\n    return
-      results\\n\\ndef get_correct_site_ids():\\n    \\\"\\\"\\\"\\n    Get the correct
-      site IDs from your controller\\n    Since 'default' is failing, we need to discover
-      the actual site IDs\\n    \\\"\\\"\\\"\\n    try:\\n        # Try to get sites
-      from Integration API\\n        resp = _get(f\\\"{NET_INTEGRATION_BASE}/sites\\\",
-      _h_key())\\n        sites = resp.get(\\\"data\\\", [])\\n        return [site.get(\\\"id\\\")
-      for site in sites if site.get(\\\"id\\\")]\\n    except Exception as e:\\n        print(f\\\"Failed
-      to get sites from Integration API: {e}\\\")\\n        \\n        # Try legacy
-      API to get sites\\n        try:\\n            legacy_login()\\n            resp
-      = legacy_get(\\\"/self/sites\\\")\\n            sites = resp.get(\\\"data\\\",
-      [])\\n            return [site.get(\\\"name\\\") for site in sites if site.get(\\\"name\\\")]\\n
-      \       except Exception as e2:\\n            print(f\\\"Failed to get sites
-      from Legacy API: {e2}\\\")\\n            \\n    return []\\n\\ndef list_hosts_with_correct_sites():\\n
-      \   \\\"\\\"\\\"\\n    List hosts using the correct site IDs discovered from
-      your controller\\n    \\\"\\\"\\\"\\n    result = {\\n        \\\"success\\\":
-      False,\\n        \\\"discovered_sites\\\": [],\\n        \\\"hosts_by_site\\\":
-      {},\\n        \\\"total_hosts\\\": 0,\\n        \\\"errors\\\": []\\n    }\\n
-      \   \\n    # Discover correct site IDs\\n    site_ids = get_correct_site_ids()\\n
-      \   result[\\\"discovered_sites\\\"] = site_ids\\n    \\n    if not site_ids:\\n
-      \       result[\\\"errors\\\"].append(\\\"No valid site IDs discovered\\\")\\n
-      \       return result\\n    \\n    # Try each site\\n    for site_id in site_ids:\\n
-      \       try:\\n            # Get clients for this site\\n            clients
-      = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n            devices
-      = paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n            \\n
-      \           site_hosts = {\\n                \\\"site_id\\\": site_id,\\n                \\\"clients\\\":
-      clients,\\n                \\\"devices\\\": devices,\\n                \\\"client_count\\\":
-      len(clients),\\n                \\\"device_count\\\": len(devices),\\n                \\\"total\\\":
-      len(clients) + len(devices)\\n            }\\n            \\n            result[\\\"hosts_by_site\\\"][site_id]
-      = site_hosts\\n            result[\\\"total_hosts\\\"] += site_hosts[\\\"total\\\"]\\n
-      \           result[\\\"success\\\"] = True\\n            \\n        except Exception
-      as e:\\n            result[\\\"errors\\\"].append(f\\\"Site {site_id}: {str(e)}\\\")\\n
-      \   \\n    return result\\n\\n# ========= Status Manager Classes =========\\n@dataclass\\nclass
-      UniFiStatus:\\n    \\\"\\\"\\\"Structured status information for UniFi components\\\"\\\"\\\"\\n
-      \   component: str\\n    status: str\\n    last_check: datetime\\n    details:
-      Dict[str, Any]\\n    issues: List[str]\\n\\nclass UniFiStatusManager:\\n    \\\"\\\"\\\"Centralized
-      status management for all UniFi services\\\"\\\"\\\"\\n    \\n    def __init__(self):\\n
-      \       self.last_status_check = None\\n        self.cached_status = {}\\n        self.status_cache_duration
-      = 300  # 5 minutes\\n    \\n    def get_comprehensive_status(self, site_id:
-      str = None) -\\u003e Dict[str, Any]:\\n        \\\"\\\"\\\"Get complete status
-      of all UniFi services\\\"\\\"\\\"\\n        now = datetime.now()\\n        \\n
-      \       # Use discovered site ID if none provided\\n        if site_id is None:\\n
-      \           sites = get_correct_site_ids()\\n            site_id = sites[0]
-      if sites else \\\"default\\\"\\n        \\n        # Check if we need to refresh
-      cache\\n        if (self.last_status_check is None or \\n            (now -
-      self.last_status_check).seconds \\u003e self.status_cache_duration):\\n            self.cached_status
-      = self._collect_all_status(site_id)\\n            self.last_status_check = now\\n
-      \       \\n        return self.cached_status\\n    \\n    def _collect_all_status(self,
-      site_id: str) -\\u003e Dict[str, Any]:\\n        \\\"\\\"\\\"Collect status
-      from all UniFi services\\\"\\\"\\\"\\n        status = {\\n            \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n            \\\"site_id\\\": site_id,\\n            \\\"overall_health\\\":
-      \\\"unknown\\\",\\n            \\\"services\\\": {},\\n            \\\"summary\\\":
-      {\\n                \\\"total_devices\\\": 0,\\n                \\\"online_devices\\\":
-      0,\\n                \\\"total_clients\\\": 0,\\n                \\\"active_clients\\\":
-      0,\\n                \\\"issues_count\\\": 0\\n            }\\n        }\\n
-      \       \\n        # Check Integration API health\\n        try:\\n            health
-      = _health_check()\\n            status[\\\"services\\\"][\\\"integration\\\"]
-      = {\\n                \\\"status\\\": \\\"healthy\\\" if health.get(\\\"ok\\\")
-      else \\\"error\\\",\\n                \\\"details\\\": health,\\n                \\\"last_check\\\":
-      datetime.now().isoformat()\\n            }\\n        except Exception as e:\\n
-      \           status[\\\"services\\\"][\\\"integration\\\"] = {\\n                \\\"status\\\":
-      \\\"error\\\",\\n                \\\"error\\\": str(e),\\n                \\\"last_check\\\":
-      datetime.now().isoformat()\\n            }\\n        \\n        # Check devices
-      status\\n        try:\\n            devices = get_devices_with_fallback(site_id)\\n
-      \           # Handle both Integration API (string) and Legacy API (int) state
-      formats\\n            online_devices = [d for d in devices if\\n                            (isinstance(d.get(\\\"state\\\"),
-      int) and d.get(\\\"state\\\") == 1) or\\n                            (isinstance(d.get(\\\"state\\\"),
-      str) and d.get(\\\"state\\\").upper() == \\\"ONLINE\\\")]\\n            status[\\\"services\\\"][\\\"devices\\\"]
-      = {\\n                \\\"status\\\": \\\"healthy\\\",\\n                \\\"total\\\":
-      len(devices),\\n                \\\"online\\\": len(online_devices),\\n                \\\"offline\\\":
-      len(devices) - len(online_devices),\\n                \\\"last_check\\\": datetime.now().isoformat()\\n
-      \           }\\n            status[\\\"summary\\\"][\\\"total_devices\\\"] =
-      len(devices)\\n            status[\\\"summary\\\"][\\\"online_devices\\\"] =
-      len(online_devices)\\n        except Exception as e:\\n            status[\\\"services\\\"][\\\"devices\\\"]
-      = {\\n                \\\"status\\\": \\\"error\\\",\\n                \\\"error\\\":
-      str(e),\\n                \\\"last_check\\\": datetime.now().isoformat()\\n
-      \           }\\n        \\n        # Check clients status\\n        try:\\n
-      \           all_clients = get_clients_with_fallback(site_id)\\n            #
-      The /clients endpoint returns currently connected clients\\n            status[\\\"services\\\"][\\\"clients\\\"]
-      = {\\n                \\\"status\\\": \\\"healthy\\\",\\n                \\\"total\\\":
-      len(all_clients),\\n                \\\"active\\\": len(all_clients),\\n                \\\"last_check\\\":
-      datetime.now().isoformat()\\n            }\\n            status[\\\"summary\\\"][\\\"total_clients\\\"]
-      = len(all_clients)\\n            status[\\\"summary\\\"][\\\"active_clients\\\"]
-      = len(all_clients)\\n        except Exception as e:\\n            status[\\\"services\\\"][\\\"clients\\\"]
-      = {\\n                \\\"status\\\": \\\"error\\\",\\n                \\\"error\\\":
-      str(e),\\n                \\\"last_check\\\": datetime.now().isoformat()\\n
-      \           }\\n        \\n        # Check Access status (if available)\\n        try:\\n
-      \           doors_resp = _get(f\\\"{ACCESS_BASE}/doors\\\", _h_key())\\n            status[\\\"services\\\"][\\\"access\\\"]
-      = {\\n                \\\"status\\\": \\\"healthy\\\",\\n                \\\"doors_count\\\":
-      len(doors_resp.get(\\\"data\\\", [])),\\n                \\\"last_check\\\":
-      datetime.now().isoformat()\\n            }\\n        except Exception as e:\\n
-      \           status[\\\"services\\\"][\\\"access\\\"] = {\\n                \\\"status\\\":
-      \\\"unavailable\\\",\\n                \\\"error\\\": str(e),\\n                \\\"last_check\\\":
-      datetime.now().isoformat()\\n            }\\n        \\n        # Check Protect
-      status (if available)\\n        try:\\n            cameras = protect_get(\\\"/cameras\\\")\\n
-      \           online_cameras = [c for c in cameras.get(\\\"data\\\", []) if c.get(\\\"state\\\")
-      == \\\"CONNECTED\\\"]\\n            status[\\\"services\\\"][\\\"protect\\\"]
-      = {\\n                \\\"status\\\": \\\"healthy\\\",\\n                \\\"cameras_total\\\":
-      len(cameras.get(\\\"data\\\", [])),\\n                \\\"cameras_online\\\":
-      len(online_cameras),\\n                \\\"last_check\\\": datetime.now().isoformat()\\n
-      \           }\\n        except Exception as e:\\n            status[\\\"services\\\"][\\\"protect\\\"]
-      = {\\n                \\\"status\\\": \\\"unavailable\\\",\\n                \\\"error\\\":
-      str(e),\\n                \\\"last_check\\\": datetime.now().isoformat()\\n
-      \           }\\n        \\n        # Calculate overall health\\n        status[\\\"overall_health\\\"]
-      = self._calculate_overall_health(status[\\\"services\\\"])\\n        \\n        #
-      Count issues\\n        status[\\\"summary\\\"][\\\"issues_count\\\"] = sum(\\n
-      \           1 for service in status[\\\"services\\\"].values() \\n            if
-      service[\\\"status\\\"] in [\\\"error\\\", \\\"degraded\\\"]\\n        )\\n
-      \       \\n        return status\\n    \\n    def _calculate_overall_health(self,
-      services: Dict[str, Any]) -\\u003e str:\\n        \\\"\\\"\\\"Calculate overall
-      system health based on service statuses\\\"\\\"\\\"\\n        statuses = [s[\\\"status\\\"]
-      for s in services.values()]\\n        \\n        if any(s == \\\"error\\\" for
-      s in statuses):\\n            return \\\"degraded\\\"\\n        elif all(s in
-      [\\\"healthy\\\", \\\"unavailable\\\"] for s in statuses):\\n            # Consider
-      unavailable services (like Access/Protect) as OK if not configured\\n            return
-      \\\"healthy\\\"\\n        else:\\n            return \\\"unknown\\\"\\n    \\n
-      \   def get_device_health_summary(self, site_id: str = None) -\\u003e Dict[str,
-      Any]:\\n        \\\"\\\"\\\"Get detailed device health information\\\"\\\"\\\"\\n
-      \       if site_id is None:\\n            sites = get_correct_site_ids()\\n
-      \           site_id = sites[0] if sites else \\\"default\\\"\\n            \\n
-      \       try:\\n            devices = paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n
-      \           \\n            summary = {\\n                \\\"total_devices\\\":
-      len(devices),\\n                \\\"by_state\\\": {},\\n                \\\"by_type\\\":
-      {},\\n                \\\"issues\\\": [],\\n                \\\"uptime_stats\\\":
-      {\\\"min\\\": None, \\\"max\\\": None, \\\"avg\\\": None}\\n            }\\n
-      \           \\n            uptimes = []\\n            for device in devices:\\n
-      \               # Count by state - handle both Integration API (string) and
-      Legacy API (int)\\n                state = device.get(\\\"state\\\", \\\"unknown\\\")\\n\\n
-      \               # Normalize state to lowercase string for consistent handling\\n
-      \               if isinstance(state, str):\\n                    state_name
-      = state.lower()\\n                elif isinstance(state, int):\\n                    state_name
-      = {1: \\\"online\\\", 0: \\\"offline\\\", -1: \\\"error\\\"}.get(state, \\\"unknown\\\")\\n
-      \               else:\\n                    state_name = \\\"unknown\\\"\\n\\n
-      \               summary[\\\"by_state\\\"][state_name] = summary[\\\"by_state\\\"].get(state_name,
-      0) + 1\\n\\n                # Count by type\\n                dev_type = device.get(\\\"type\\\",
-      device.get(\\\"model\\\", \\\"unknown\\\"))\\n                summary[\\\"by_type\\\"][dev_type]
-      = summary[\\\"by_type\\\"].get(dev_type, 0) + 1\\n\\n                # Check
-      for issues - handle both string and int\\n                is_offline = (isinstance(state,
-      int) and state == 0) or \\\\\\n                            (isinstance(state,
-      str) and state.upper() == \\\"OFFLINE\\\")\\n                if is_offline:\\n
-      \                   summary[\\\"issues\\\"].append(f\\\"{device.get('name',
-      'Unknown')} is offline\\\")\\n\\n                # Collect uptime\\n                uptime
-      = device.get(\\\"uptime\\\")\\n                if uptime:\\n                    uptimes.append(uptime)\\n
-      \           \\n            # Calculate uptime stats\\n            if uptimes:\\n
-      \               summary[\\\"uptime_stats\\\"] = {\\n                    \\\"min\\\":
-      min(uptimes),\\n                    \\\"max\\\": max(uptimes),\\n                    \\\"avg\\\":
-      sum(uptimes) / len(uptimes)\\n                }\\n            \\n            return
-      summary\\n            \\n        except Exception as e:\\n            return
-      {\\\"error\\\": str(e)}\\n    \\n    def get_client_activity_summary(self, site_id:
-      str = None) -\\u003e Dict[str, Any]:\\n        \\\"\\\"\\\"Get client activity
-      and usage patterns\\\"\\\"\\\"\\n        if site_id is None:\\n            sites
-      = get_correct_site_ids()\\n            site_id = sites[0] if sites else \\\"default\\\"\\n\\n
-      \       try:\\n            # The /clients endpoint returns currently connected
-      clients\\n            active_clients = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n
-      \           \\n            summary = {\\n                \\\"active_count\\\":
-      len(active_clients),\\n                \\\"by_connection\\\": {},\\n                \\\"bandwidth_usage\\\":
-      {\\\"total_rx\\\": 0, \\\"total_tx\\\": 0},\\n                \\\"top_users\\\":
-      [],\\n                \\\"last_updated\\\": datetime.now().isoformat()\\n            }\\n
-      \           \\n            # Analyze active clients\\n            clients_with_usage
-      = []\\n            for client in active_clients:\\n                # Count by
-      connection type\\n                conn_type = \\\"wired\\\" if client.get(\\\"is_wired\\\")
-      else \\\"wireless\\\"\\n                summary[\\\"by_connection\\\"][conn_type]
-      = summary[\\\"by_connection\\\"].get(conn_type, 0) + 1\\n                \\n
-      \               # Sum bandwidth\\n                rx_bytes = client.get(\\\"rx_bytes\\\",
-      0)\\n                tx_bytes = client.get(\\\"tx_bytes\\\", 0)\\n                summary[\\\"bandwidth_usage\\\"][\\\"total_rx\\\"]
-      += rx_bytes\\n                summary[\\\"bandwidth_usage\\\"][\\\"total_tx\\\"]
-      += tx_bytes\\n                \\n                # Collect for top users\\n
-      \               total_usage = rx_bytes + tx_bytes\\n                clients_with_usage.append({\\n
-      \                   \\\"name\\\": client.get(\\\"hostname\\\") or client.get(\\\"name\\\")
-      or client.get(\\\"mac\\\"),\\n                    \\\"usage\\\": total_usage,\\n
-      \                   \\\"rx\\\": rx_bytes,\\n                    \\\"tx\\\":
-      tx_bytes\\n                })\\n            \\n            # Get top 5 users
-      by bandwidth\\n            summary[\\\"top_users\\\"] = sorted(\\n                clients_with_usage,
-      \\n                key=lambda x: x[\\\"usage\\\"], \\n                reverse=True\\n
-      \           )[:5]\\n            \\n            return summary\\n            \\n
-      \       except Exception as e:\\n            return {\\\"error\\\": str(e)}\\n\\n#
-      Initialize the status manager\\nstatus_manager = UniFiStatusManager()\\n\\n#
-      ========= UniFi Health (triple-registered) =========\\n\\n# 1) Original scheme
-      you tried\\n@mcp.resource(\\\"unifi://health\\\")\\nasync def unifi_health_resource()
-      -\\u003e Dict[str, Any]:\\n    return _health_check()\\n\\n# 2) Alternate scheme
-      many inspectors display reliably\\n@mcp.resource(\\\"health://unifi\\\")\\nasync
-      def health_alias_resource() -\\u003e Dict[str, Any]:\\n    return _health_check()\\n\\n#
-      3) Extra alias (belt \\u0026 suspenders)\\n@mcp.resource(\\\"status://unifi\\\")\\nasync
-      def status_alias_resource() -\\u003e Dict[str, Any]:\\n    return _health_check()\\n\\n#
-      ========= Capability probe =========\\n@mcp.resource(\\\"unifi://capabilities\\\")\\nasync
-      def capabilities() -\\u003e Dict[str, Any]:\\n    out: Dict[str, Any] = {\\\"integration\\\":
-      {}, \\\"access\\\": {}, \\\"legacy\\\": {}, \\\"protect\\\": {}, \\\"sitemanager\\\":
-      {}}\\n\\n    def try_get(label: str, url: str, headers: Optional[Dict[str, str]]
-      = None):\\n        try:\\n            validated_url = validate_url(url, f\\\"capability
-      probe: {label}\\\")\\n            r = requests.get(validated_url, headers=headers,
-      verify=VERIFY_TLS, timeout=6)\\n            out[label] = {\\\"url\\\": url,
-      \\\"status\\\": r.status_code}\\n        except Exception as e:\\n            out[label]
-      = {\\\"url\\\": url, \\\"error\\\": str(e)}\\n\\n    # Network Integration\\n
-      \   try_get(\\\"integration.sites\\\", \\\"/\\\".join([NET_INTEGRATION_BASE,
-      \\\"sites\\\"]), _h_key())\\n    \\n    # Get correct site for testing\\n    sites
-      = get_correct_site_ids()\\n    test_site = sites[0] if sites else \\\"default\\\"\\n
-      \   \\n    try_get(\\\"integration.devices\\\", \\\"/\\\".join([NET_INTEGRATION_BASE,
-      \\\"sites\\\", test_site, \\\"devices\\\"]), _h_key())\\n    try_get(\\\"integration.clients\\\",
-      \\\"/\\\".join([NET_INTEGRATION_BASE, \\\"sites\\\", test_site, \\\"clients\\\"]),
-      _h_key())\\n    try_get(\\\"integration.wlans\\\", \\\"/\\\".join([NET_INTEGRATION_BASE,
-      \\\"sites\\\", test_site, \\\"wlans\\\"]), _h_key())\\n\\n    # Access\\n    try_get(\\\"access.doors\\\",
-      \\\"/\\\".join([ACCESS_BASE, \\\"doors\\\"]), _h_key())\\n    try_get(\\\"access.readers\\\",
-      \\\"/\\\".join([ACCESS_BASE, \\\"readers\\\"]), _h_key())\\n    try_get(\\\"access.events\\\",
-      \\\"/\\\".join([ACCESS_BASE, \\\"events\\\"]), _h_key())\\n\\n    # Legacy quick
-      check\\n    try:\\n        legacy_login()\\n        legacy_url = \\\"/\\\".join([LEGACY_BASE,
-      \\\"s\\\", test_site, \\\"stat\\\", \\\"sta\\\"])\\n        validated_url =
-      validate_url(legacy_url, \\\"legacy capability probe\\\")\\n        r = LEGACY.get(validated_url,
-      verify=VERIFY_TLS, timeout=6)\\n        out[\\\"legacy.stat_sta\\\"] = {\\\"url\\\":
-      r.request.url, \\\"status\\\": r.status_code}\\n    except Exception as e:\\n
-      \       out[\\\"legacy.stat_sta\\\"] = {\\\"error\\\": str(e)}\\n\\n    # Protect\\n
-      \   def try_get_protect(label: str, path: str):\\n        try:\\n            protect_url
-      = f\\\"{PROTECT_BASE}{path}\\\"\\n            validated_url = validate_url(protect_url,
-      f\\\"protect probe: {label}\\\")\\n            r = requests.get(validated_url,
-      headers=_h_key(), verify=VERIFY_TLS, timeout=6)\\n            if r.status_code
-      in (401, 403) and LEGACY_USER and LEGACY_PASS:\\n                legacy_login()\\n
-      \               r = LEGACY.get(validated_url, verify=VERIFY_TLS, timeout=6)\\n
-      \           out[f\\\"protect.{label}\\\"] = {\\\"url\\\": protect_url, \\\"status\\\":
-      r.status_code}\\n        except Exception as e:\\n            out[f\\\"protect.{label}\\\"]
-      = {\\\"url\\\": f\\\"{PROTECT_BASE}{path}\\\", \\\"error\\\": str(e)}\\n\\n
-      \   try_get_protect(\\\"bootstrap\\\", \\\"/bootstrap\\\")\\n    try_get_protect(\\\"cameras\\\",
-      \\\"/cameras\\\")\\n    try_get_protect(\\\"events\\\", \\\"/events\\\")\\n\\n
-      \   # Site Manager\\n    if SM_BASE and SM_TOKEN:\\n        try_get(\\\"sitemanager.root\\\",
-      f\\\"{SM_BASE}/\\\", {\\\"Authorization\\\": SM_TOKEN})\\n    else:\\n        out[\\\"sitemanager.info\\\"]
-      = \\\"Set UNIFI_SITEMGR_BASE \\u0026 UNIFI_SITEMGR_TOKEN to probe.\\\"\\n\\n
-      \   return out\\n\\n# ========= Network Integration: resources =========\\n@mcp.resource(\\\"sites://{site_id}/devices\\\")\\nasync
-      def devices(site_id: str) -\\u003e List[Dict[str, Any]]:\\n    return paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n\\n@mcp.resource(\\\"sites://{site_id}/clients\\\")\\nasync
-      def clients(site_id: str) -\\u003e List[Dict[str, Any]]:\\n    return paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n\\n@mcp.resource(\\\"sites://{site_id}/clients/active\\\")\\nasync
-      def clients_active(site_id: str) -\\u003e List[Dict[str, Any]]:\\n    # The
-      /clients endpoint returns currently connected (active) clients\\n    return
-      paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n\\n# WLANs with graceful
-      fallback (Integration -\\u003e Legacy) and safe URL joins\\n@mcp.resource(\\\"sites://{site_id}/wlans\\\")\\nasync
-      def wlans(site_id: str):\\n    # 1) Integration attempt (often 404/not exposed)\\n
-      \   try:\\n        url = \\\"/\\\".join([NET_INTEGRATION_BASE, \\\"sites\\\",
-      site_id, \\\"wlans\\\"])\\n        res = _get(url, _h_key())\\n        return
-      res.get(\\\"data\\\", [])\\n    except UniFiHTTPError as e:\\n        if \\\"404\\\"
-      not in str(e):\\n            raise\\n    # 2) Legacy fallback\\n    if LEGACY_USER
-      and LEGACY_PASS:\\n        lr = legacy_get(f\\\"/s/{site_id}/rest/wlanconf\\\")\\n
-      \       return lr.get(\\\"data\\\", lr)\\n    # 3) Explain\\n    return {\\n
-      \       \\\"ok\\\": False,\\n        \\\"reason\\\": \\\"WLANs not exposed by
-      Integration API and no legacy credentials provided.\\\",\\n        \\\"tried\\\":
-      [\\n            \\\"/\\\".join([NET_INTEGRATION_BASE, \\\"sites\\\", site_id,
-      \\\"wlans\\\"]),\\n            f\\\"{LEGACY_BASE}/s/{site_id}/rest/wlanconf
-      (legacy)\\\"\\n        ],\\n        \\\"how_to_enable_legacy\\\": \\\"Set UNIFI_USERNAME
-      and UNIFI_PASSWORD.\\\"\\n    }\\n\\n# Search helpers\\n@mcp.resource(\\\"sites://{site_id}/search/clients/{query}\\\")\\nasync
-      def search_clients(site_id: str, query: str):\\n    cs = await clients(site_id)\\n
-      \   q = query.lower()\\n    def hit(c): return any(q in str(c.get(k, \\\"\\\")).lower()
-      for k in (\\\"hostname\\\", \\\"name\\\", \\\"mac\\\", \\\"ip\\\", \\\"user\\\"))\\n
-      \   return [c for c in cs if hit(c)]\\n\\n@mcp.resource(\\\"sites://{site_id}/search/devices/{query}\\\")\\nasync
-      def search_devices(site_id: str, query: str):\\n    ds = await devices(site_id)\\n
-      \   q = query.lower()\\n    def hit(d): return any(q in str(d.get(k, \\\"\\\")).lower()
-      for k in (\\\"name\\\", \\\"model\\\", \\\"mac\\\", \\\"ip\\\", \\\"ip_address\\\"))\\n
-      \   return [d for d in ds if hit(d)]\\n\\n# ========= Enhanced Status Resources
-      =========\\n@mcp.resource(\\\"status://system\\\")\\nasync def system_status_resource()
-      -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Real-time system status resource\\\"\\\"\\\"\\n
-      \   return status_manager.get_comprehensive_status()\\n\\n@mcp.resource(\\\"status://devices\\\")\\nasync
-      def devices_status_resource() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Device
-      health status resource\\\"\\\"\\\"\\n    return status_manager.get_device_health_summary()\\n\\n@mcp.resource(\\\"status://clients\\\")\\nasync
-      def clients_status_resource() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Client
-      activity status resource\\\"\\\"\\\"\\n    return status_manager.get_client_activity_summary()\\n\\n#
-      ========= Tools =========\\n\\n# Tool fallback (always visible in Tools tab)\\n@mcp.tool()\\ndef
-      unifi_health() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Ping the UniFi Integration
-      API and report basic health.\\\"\\\"\\\"\\n    return _health_check()\\n\\n#
-      Debug tool to see what FastMCP registered\\n@mcp.tool()\\ndef debug_registry()
-      -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Lists resources, tools, and
-      prompts currently registered.\\n    Helpful when a resource isn't visible in
-      your inspector UI.\\n    \\\"\\\"\\\"\\n    def grab(obj, names):\\n        for
-      n in names:\\n            if hasattr(obj, n):\\n                return getattr(obj,
-      n)\\n        return []\\n\\n    resources = grab(mcp, (\\\"resources\\\", \\\"_resources\\\"))\\n
-      \   tools     = grab(mcp, (\\\"tools\\\", \\\"_tools\\\"))\\n    prompts   =
-      grab(mcp, (\\\"prompts\\\", \\\"_prompts\\\"))\\n\\n    def res_name(r):\\n
-      \       return getattr(r, \\\"uri_template\\\", getattr(r, \\\"name\\\", str(r)))\\n
-      \   def tool_name(t):\\n        return getattr(t, \\\"name\\\", str(t))\\n    def
-      prompt_name(p):\\n        return getattr(p, \\\"name\\\", str(p))\\n\\n    return
-      {\\n        \\\"resources\\\": sorted([res_name(r) for r in resources]),\\n
-      \       \\\"tools\\\":     sorted([tool_name(t) for t in tools]),\\n        \\\"prompts\\\":
-      \  sorted([prompt_name(p) for p in prompts]),\\n    }\\n\\n# ========= Enhanced
-      Status Management Tools =========\\n@mcp.tool()\\ndef get_system_status(site_id:
-      str = None) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Get comprehensive UniFi
-      system status including all services and components.\\\"\\\"\\\"\\n    return
-      status_manager.get_comprehensive_status(site_id)\\n\\n# REMOVED: Old local controller
-      tools - replaced by Site Manager API versions below\\n# @mcp.tool()\\n# def
-      get_device_health(site_id: str = None) -\\u003e Dict[str, Any]:\\n#     \\\"\\\"\\\"Get
-      detailed device health summary with uptime and issue tracking.\\\"\\\"\\\"\\n#
-      \    return status_manager.get_device_health_summary(site_id)\\n\\n# @mcp.tool()\\n#
-      def get_client_activity(site_id: str = None) -\\u003e Dict[str, Any]:\\n#     \\\"\\\"\\\"Get
-      client activity summary with bandwidth usage and connection types.\\\"\\\"\\\"\\n#
-      \    return status_manager.get_client_activity_summary(site_id)\\n\\n@mcp.tool()\\ndef
-      get_quick_status() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Get a quick status
-      overview of critical UniFi components. Uses cloud API (api.ui.com) with local
-      failover.\\\"\\\"\\\"\\n\\n    # Try Cloud API first (primary - api.ui.com)\\n
-      \   if SM_BASE and SM_TOKEN:\\n        try:\\n            headers = {\\\"Accept\\\":
-      \\\"application/json\\\", \\\"X-API-KEY\\\": SM_TOKEN}\\n            url = f\\\"{SM_BASE}/v1/sites\\\"\\n
-      \           validated_url = validate_url(url, \\\"cloud quick status\\\")\\n
-      \           resp = requests.get(validated_url, headers=headers, verify=True,
-      timeout=REQUEST_TIMEOUT_S)\\n\\n            if resp.status_code == 200:\\n                data
-      = resp.json()\\n                sites = data.get(\\\"data\\\", [])\\n\\n                if
-      sites:\\n                    site = sites[0]\\n                    stats = site.get(\\\"statistics\\\",
-      {}).get(\\\"counts\\\", {})\\n\\n                    total_devices = stats.get(\\\"totalDevice\\\",
-      0)\\n                    offline_devices = stats.get(\\\"offlineDevice\\\",
-      0)\\n                    online_devices = total_devices - offline_devices\\n
-      \                   wifi_clients = stats.get(\\\"wifiClient\\\", 0)\\n                    wired_clients
-      = stats.get(\\\"wiredClient\\\", 0)\\n\\n                    return {\\n                        \\\"status\\\":
-      \\\"healthy\\\",\\n                        \\\"timestamp\\\": datetime.now().isoformat(),\\n
-      \                       \\\"site_name\\\": site.get(\\\"meta\\\", {}).get(\\\"name\\\",
-      \\\"default\\\"),\\n                        \\\"api_mode\\\": \\\"cloud\\\",\\n
-      \                       \\\"summary\\\": {\\n                            \\\"devices_online\\\":
-      f\\\"{online_devices}/{total_devices}\\\",\\n                            \\\"active_clients\\\":
-      wifi_clients + wired_clients,\\n                            \\\"wifi_clients\\\":
-      wifi_clients,\\n                            \\\"wired_clients\\\": wired_clients,\\n
-      \                           \\\"controller_responsive\\\": True\\n                        },\\n
-      \                       \\\"failover_available\\\": f\\\"https://{FAILOVER_HOST}:{FAILOVER_PORT}\\\"\\n
-      \                   }\\n        except Exception as cloud_err:\\n            print(f\\\"[QuickStatus]
-      Cloud API failed: {cloud_err}, trying local failover...\\\")\\n\\n    # Failover
-      to local Integration API\\n    health = _health_check()\\n    if not health.get(\\\"ok\\\"):\\n
-      \       return {\\\"status\\\": \\\"error\\\", \\\"message\\\": \\\"Both cloud
-      and local APIs unreachable\\\", \\\"details\\\": health}\\n\\n    try:\\n        #
-      Get correct site ID\\n        sites = get_correct_site_ids()\\n        site_id
-      = sites[0] if sites else \\\"default\\\"\\n\\n        # Quick counts\\n        devices
-      = paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n        # The /clients
-      endpoint returns currently connected (active) clients\\n        active_clients
-      = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n\\n        # Count
-      online devices - handle both Integration API (string) and Legacy API (int)\\n
-      \       online_devices = len([d for d in devices if\\n                             (isinstance(d.get(\\\"state\\\"),
-      int) and d.get(\\\"state\\\") == 1) or\\n                             (isinstance(d.get(\\\"state\\\"),
-      str) and d.get(\\\"state\\\").upper() == \\\"ONLINE\\\")])\\n\\n        return
-      {\\n            \\\"status\\\": \\\"healthy\\\",\\n            \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n            \\\"site_id\\\": site_id,\\n            \\\"api_mode\\\":
-      \\\"local_failover\\\",\\n            \\\"summary\\\": {\\n                \\\"devices_online\\\":
-      f\\\"{online_devices}/{len(devices)}\\\",\\n                \\\"active_clients\\\":
-      len(active_clients),\\n                \\\"controller_responsive\\\": True\\n
-      \           }\\n        }\\n    except Exception as e:\\n        return {\\n
-      \           \\\"status\\\": \\\"degraded\\\",\\n            \\\"message\\\":
-      f\\\"Controller responsive but data collection failed: {str(e)}\\\",\\n            \\\"api_mode\\\":
-      \\\"local_failover\\\"\\n        }\\n\\n# ========= Enhanced List Hosts Tools
-      =========\\n@mcp.tool()\\ndef list_hosts_api_format():\\n    \\\"\\\"\\\"\\n
-      \   List hosts using the exact API format from your examples\\n    Matches:
-      GET https://api.ui.com/v1/hosts with X-API-Key header\\n    \\\"\\\"\\\"\\n
-      \   return list_hosts_api_ui_com_format()\\n\\n@mcp.tool()\\ndef discover_sites():\\n
-      \   \\\"\\\"\\\"\\n    Discover the correct site IDs for your UniFi controller\\n
-      \   \\\"\\\"\\\"\\n    return {\\n        \\\"discovered_sites\\\": get_correct_site_ids(),\\n
-      \       \\\"note\\\": \\\"Use these site IDs instead of 'default' for local
-      API calls\\\"\\n    }\\n\\n@mcp.tool()\\ndef list_hosts_fixed():\\n    \\\"\\\"\\\"\\n
-      \   List hosts using discovered site IDs instead of 'default'\\n    \\\"\\\"\\\"\\n
-      \   return list_hosts_with_correct_sites()\\n\\n@mcp.tool()\\ndef working_list_hosts_example():\\n
-      \   \\\"\\\"\\\"\\n    Complete working example that combines your API format
-      with proper error handling\\n    \\\"\\\"\\\"\\n    example_result = {\\n        \\\"method_used\\\":
-      None,\\n        \\\"data\\\": None,\\n        \\\"success\\\": False,\\n        \\\"error\\\":
-      None,\\n        \\\"fallback_attempted\\\": False\\n    }\\n    \\n    # Method
-      1: Try cloud API (your working method)\\n    try:\\n        url = \\\"https://api.ui.com/v1/hosts\\\"\\n
-      \       validated_url = validate_url(url, \\\"cloud hosts list\\\")\\n        \\n
-      \       headers = {\\n            'Accept': 'application/json',\\n            'X-API-Key':
-      SM_TOKEN\\n        }\\n        response = requests.get(validated_url, headers=headers,
-      verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n        \\n        if response.status_code
-      == 200:\\n            example_result[\\\"method_used\\\"] = \\\"cloud_api\\\"\\n
-      \           example_result[\\\"data\\\"] = response.json()\\n            example_result[\\\"success\\\"]
-      = True\\n            return example_result\\n        else:\\n            example_result[\\\"error\\\"]
-      = f\\\"Cloud API failed: {response.status_code}\\\"\\n    except Exception as
-      e:\\n        example_result[\\\"error\\\"] = f\\\"Cloud API error: {str(e)}\\\"\\n
-      \   \\n    # Method 2: Fallback to local API with proper site discovery\\n    example_result[\\\"fallback_attempted\\\"]
-      = True\\n    try:\\n        sites = get_correct_site_ids()\\n        if sites:\\n
-      \           site_id = sites[0]  # Use first available site\\n            clients
-      = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n            devices
-      = paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n            \\n
-      \           # Format similar to cloud API response\\n            local_data
-      = {\\n                \\\"data\\\": [],\\n                \\\"source\\\": \\\"local_integration_api\\\",\\n
-      \               \\\"site_id\\\": site_id\\n            }\\n            \\n            #
-      Add clients as hosts\\n            for client in clients:\\n                host_entry
-      = {\\n                    \\\"id\\\": client.get(\\\"mac\\\"),\\n                    \\\"type\\\":
-      \\\"client\\\",\\n                    \\\"hostname\\\": client.get(\\\"hostname\\\"),\\n
-      \                   \\\"ipAddress\\\": client.get(\\\"ip\\\"),\\n                    \\\"mac\\\":
-      client.get(\\\"mac\\\"),\\n                    \\\"isActive\\\": client.get(\\\"is_active\\\",
-      False)\\n                }\\n                local_data[\\\"data\\\"].append(host_entry)\\n
-      \           \\n            # Add devices as hosts\\n            for device in
-      devices:\\n                host_entry = {\\n                    \\\"id\\\":
-      device.get(\\\"mac\\\"),\\n                    \\\"type\\\": \\\"device\\\",
-      \\n                    \\\"hostname\\\": device.get(\\\"name\\\"),\\n                    \\\"ipAddress\\\":
-      device.get(\\\"ip\\\"),\\n                    \\\"mac\\\": device.get(\\\"mac\\\"),\\n
-      \                   \\\"isActive\\\": device.get(\\\"state\\\") == 1\\n                }\\n
-      \               local_data[\\\"data\\\"].append(host_entry)\\n            \\n
-      \           example_result[\\\"method_used\\\"] = \\\"local_integration_api\\\"\\n
-      \           example_result[\\\"data\\\"] = local_data\\n            example_result[\\\"success\\\"]
-      = True\\n            \\n        else:\\n            example_result[\\\"error\\\"]
-      = \\\"No valid sites found for local API\\\"\\n            \\n    except Exception
-      as e:\\n        example_result[\\\"error\\\"] = f\\\"Local API fallback failed:
-      {str(e)}\\\"\\n    \\n    return example_result\\n\\n@mcp.tool()\\ndef debug_api_connectivity():\\n
-      \   \\\"\\\"\\\"\\n    Debug API connectivity issues and provide troubleshooting
-      information\\n    \\\"\\\"\\\"\\n    debug_info = {\\n        \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n        \\\"tests\\\": {},\\n        \\\"environment\\\":
-      {},\\n        \\\"recommendations\\\": []\\n    }\\n    \\n    # Test 1: Cloud
-      API connectivity\\n    try:\\n        url = \\\"https://api.ui.com/v1/hosts\\\"\\n
-      \       validated_url = validate_url(url, \\\"cloud API debug\\\")\\n        response
-      = requests.get(validated_url, \\n                              headers={\\\"Accept\\\":
-      \\\"application/json\\\", \\\"X-API-Key\\\": SM_TOKEN},\\n                              timeout=10,
-      verify=VERIFY_TLS)\\n        debug_info[\\\"tests\\\"][\\\"cloud_api\\\"] =
-      {\\n            \\\"status\\\": \\\"success\\\" if response.status_code == 200
-      else \\\"failed\\\",\\n            \\\"status_code\\\": response.status_code,\\n
-      \           \\\"response_length\\\": len(response.text),\\n            \\\"error\\\":
-      response.text[:200] if response.status_code != 200 else None\\n        }\\n
-      \   except Exception as e:\\n        debug_info[\\\"tests\\\"][\\\"cloud_api\\\"]
-      = {\\\"status\\\": \\\"error\\\", \\\"error\\\": str(e)}\\n    \\n    # Test
-      2: Local controller connectivity\\n    try:\\n        controller_url = f\\\"{NET_INTEGRATION_BASE}/sites\\\"\\n
-      \       validated_url = validate_url(controller_url, \\\"local controller debug\\\")\\n
-      \       response = requests.get(validated_url, headers=_h_key(), timeout=10,
-      verify=VERIFY_TLS)\\n        debug_info[\\\"tests\\\"][\\\"local_controller\\\"]
-      = {\\n            \\\"status\\\": \\\"success\\\" if response.status_code ==
-      200 else \\\"failed\\\",\\n            \\\"status_code\\\": response.status_code,\\n
-      \           \\\"response_length\\\": len(response.text),\\n            \\\"error\\\":
-      response.text[:200] if response.status_code != 200 else None\\n        }\\n
-      \   except Exception as e:\\n        debug_info[\\\"tests\\\"][\\\"local_controller\\\"]
-      = {\\\"status\\\": \\\"error\\\", \\\"error\\\": str(e)}\\n    \\n    # Test
-      3: Check if controller is reachable\\n    try:\\n        base_url = f\\\"https://{UNIFI_HOST}:{UNIFI_PORT}/\\\"\\n
-      \       validated_url = validate_url(base_url, \\\"controller reachability\\\")\\n
-      \       response = requests.get(validated_url, timeout=5, verify=VERIFY_TLS)\\n
-      \       debug_info[\\\"tests\\\"][\\\"controller_reachable\\\"] = {\\n            \\\"status\\\":
-      \\\"reachable\\\",\\n            \\\"status_code\\\": response.status_code\\n
-      \       }\\n    except Exception as e:\\n        debug_info[\\\"tests\\\"][\\\"controller_reachable\\\"]
-      = {\\\"status\\\": \\\"unreachable\\\", \\\"error\\\": str(e)}\\n    \\n    #
-      Environment check\\n    debug_info[\\\"environment\\\"] = {\\n        \\\"unifi_host\\\":
-      UNIFI_HOST,\\n        \\\"unifi_port\\\": UNIFI_PORT,\\n        \\\"api_key_configured\\\":
-      bool(UNIFI_API_KEY and UNIFI_API_KEY != \\\"API\\\"),\\n        \\\"cloud_base_configured\\\":
-      bool(SM_BASE),\\n        \\\"cloud_token_configured\\\": bool(SM_TOKEN),\\n
-      \       \\\"verify_tls\\\": VERIFY_TLS,\\n        \\\"timeout\\\": REQUEST_TIMEOUT_S,\\n
-      \       \\\"discovered_sites\\\": get_correct_site_ids(),\\n        \\\"allowed_hosts\\\":
-      list(ALLOWED_HOSTS)\\n    }\\n    \\n    # Generate recommendations\\n    if
-      debug_info[\\\"tests\\\"][\\\"cloud_api\\\"][\\\"status\\\"] != \\\"success\\\":\\n
-      \       debug_info[\\\"recommendations\\\"].append(\\\"Cloud API failed - check
-      UNIFI_SITEMGR_TOKEN\\\")\\n    \\n    if debug_info[\\\"tests\\\"][\\\"local_controller\\\"][\\\"status\\\"]
-      != \\\"success\\\":\\n        debug_info[\\\"recommendations\\\"].append(\\\"Local
-      controller failed - check UNIFI_API_KEY and network connectivity\\\")\\n    \\n
-      \   if debug_info[\\\"tests\\\"][\\\"controller_reachable\\\"][\\\"status\\\"]
-      != \\\"reachable\\\":\\n        debug_info[\\\"recommendations\\\"].append(\\\"Controller
-      unreachable - check UNIFI_GATEWAY_HOST and UNIFI_GATEWAY_PORT\\\")\\n    \\n
-      \   return debug_info\\n\\n# ========= Action tools =========\\n# Integration
-      API — safe set\\n@mcp.tool()\\ndef block_client(site_id: str, mac: str) -\\u003e
-      Dict[str, Any]:\\n    return _post(\\\"/\\\".join([NET_INTEGRATION_BASE, \\\"sites\\\",
-      site_id, \\\"clients\\\", \\\"block\\\"]), _h_key(), {\\\"mac\\\": mac})\\n\\n@mcp.tool()\\ndef
-      unblock_client(site_id: str, mac: str) -\\u003e Dict[str, Any]:\\n    return
-      _post(\\\"/\\\".join([NET_INTEGRATION_BASE, \\\"sites\\\", site_id, \\\"clients\\\",
-      \\\"unblock\\\"]), _h_key(), {\\\"mac\\\": mac})\\n\\n@mcp.tool()\\ndef kick_client(site_id:
-      str, mac: str) -\\u003e Dict[str, Any]:\\n    return _post(\\\"/\\\".join([NET_INTEGRATION_BASE,
-      \\\"sites\\\", site_id, \\\"clients\\\", \\\"kick\\\"]), _h_key(), {\\\"mac\\\":
-      mac})\\n\\n@mcp.tool()\\ndef locate_device(site_id: str, device_id: str, seconds:
-      int = 30) -\\u003e Dict[str, Any]:\\n    return _post(\\\"/\\\".join([NET_INTEGRATION_BASE,
-      \\\"sites\\\", site_id, \\\"devices\\\", device_id, \\\"locate\\\"]), _h_key(),
-      {\\\"duration\\\": seconds})\\n\\n# Legacy-only example for WLAN toggle\\n@mcp.tool()\\ndef
-      wlan_set_enabled_legacy(site_id: str, wlan_id: str, enabled: bool) -\\u003e
-      Dict[str, Any]:\\n    \\\"\\\"\\\"Toggle WLAN (legacy API) when Integration
-      API doesn't expose WLANs.\\\"\\\"\\\"\\n    body = {\\\"_id\\\": wlan_id, \\\"enabled\\\":
-      bool(enabled)}\\n    return legacy_post(f\\\"/s/{site_id}/rest/wlanconf/{wlan_id}\\\",
-      body)\\n\\n# Access — sample action (varies by build)\\n@mcp.tool()\\ndef access_unlock_door(door_id:
-      str, seconds: int = 5) -\\u003e Dict[str, Any]:\\n    return _post(\\\"/\\\".join([ACCESS_BASE,
-      \\\"doors\\\", door_id, \\\"unlock\\\"]), _h_key(), {\\\"duration\\\": seconds})\\n\\n#
-      Protect — safe starters\\n@mcp.tool()\\ndef protect_camera_reboot(camera_id:
-      str) -\\u003e Dict[str, Any]:\\n    return protect_post(f\\\"/cameras/{camera_id}/reboot\\\")\\n\\n@mcp.tool()\\ndef
-      protect_camera_led(camera_id: str, enabled: bool) -\\u003e Dict[str, Any]:\\n
-      \   body = {\\\"ledSettings\\\": {\\\"isEnabled\\\": bool(enabled)}}\\n    return
-      protect_post(f\\\"/cameras/{camera_id}\\\", body)\\n\\n@mcp.tool()\\ndef protect_toggle_privacy(camera_id:
-      str, enabled: bool) -\\u003e Dict[str, Any]:\\n    body = {\\\"privacyMode\\\":
-      bool(enabled)}\\n    return protect_post(f\\\"/cameras/{camera_id}\\\", body)\\n\\n#
-      ========= Updated Original Tools with Fixed Site IDs =========\\n@mcp.tool()\\ndef
-      list_hosts(site_id: str = None) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"List
-      all network hosts/clients on the specified site\\\"\\\"\\\"\\n    if site_id
-      is None:\\n        sites = get_correct_site_ids()\\n        site_id = sites[0]
-      if sites else \\\"default\\\"\\n    \\n    try:\\n        clients = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n
-      \       devices = paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n
-      \       \\n        return {\\n            \\\"success\\\": True,\\n            \\\"site_id\\\":
-      site_id,\\n            \\\"clients\\\": clients,\\n            \\\"devices\\\":
-      devices,\\n            \\\"client_count\\\": len(clients),\\n            \\\"device_count\\\":
-      len(devices),\\n            \\\"total_hosts\\\": len(clients) + len(devices),\\n
-      \           \\\"timestamp\\\": datetime.now().isoformat()\\n        }\\n    except
-      Exception as e:\\n        return {\\n            \\\"success\\\": False,\\n
-      \           \\\"site_id\\\": site_id,\\n            \\\"error\\\": str(e),\\n
-      \           \\\"timestamp\\\": datetime.now().isoformat()\\n        }\\n\\n#
-      REMOVED: Old local controller tool - replaced by Site Manager API version below\\n#
-      @mcp.tool()\\n# def list_active_clients(site_id: str = None) -\\u003e Dict[str,
-      Any]:\\n#     \\\"\\\"\\\"List only currently connected/active clients\\\"\\\"\\\"\\n#
-      \    if site_id is None:\\n#         sites = get_correct_site_ids()\\n#         site_id
-      = sites[0] if sites else \\\"default\\\"\\n#\\n#     try:\\n#         # The
-      /clients endpoint returns currently connected (active) clients\\n#         clients
-      = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n#         return
-      {\\n#             \\\"success\\\": True,\\n#             \\\"site_id\\\": site_id,\\n#
-      \            \\\"active_clients\\\": clients,\\n#             \\\"count\\\":
-      len(clients),\\n#             \\\"timestamp\\\": datetime.now().isoformat()\\n#
-      \        }\\n#     except Exception as e:\\n#         return {\\n#             \\\"success\\\":
-      False,\\n#             \\\"site_id\\\": site_id,\\n#             \\\"error\\\":
-      str(e),\\n#             \\\"timestamp\\\": datetime.now().isoformat()\\n#         }\\n\\n@mcp.tool()\\ndef
-      find_device_by_mac(mac: str, site_id: str = None) -\\u003e Dict[str, Any]:\\n
-      \   \\\"\\\"\\\"Find a specific device by MAC address\\\"\\\"\\\"\\n    if site_id
-      is None:\\n        sites = get_correct_site_ids()\\n        site_id = sites[0]
-      if sites else \\\"default\\\"\\n        \\n    try:\\n        # Search in clients\\n
-      \       clients = paginate_integration(f\\\"/sites/{site_id}/clients\\\")\\n
-      \       client_match = next((c for c in clients if c.get(\\\"mac\\\", \\\"\\\").lower()
-      == mac.lower()), None)\\n        \\n        # Search in devices\\n        devices
-      = paginate_integration(f\\\"/sites/{site_id}/devices\\\")\\n        device_match
-      = next((d for d in devices if d.get(\\\"mac\\\", \\\"\\\").lower() == mac.lower()),
-      None)\\n        \\n        result = {\\n            \\\"success\\\": True,\\n
-      \           \\\"mac\\\": mac,\\n            \\\"site_id\\\": site_id,\\n            \\\"found\\\":
-      False,\\n            \\\"client\\\": client_match,\\n            \\\"device\\\":
-      device_match,\\n            \\\"timestamp\\\": datetime.now().isoformat()\\n
-      \       }\\n        \\n        if client_match or device_match:\\n            result[\\\"found\\\"]
-      = True\\n            result[\\\"type\\\"] = \\\"client\\\" if client_match else
-      \\\"device\\\"\\n            result[\\\"data\\\"] = client_match or device_match\\n
-      \       \\n        return result\\n        \\n    except Exception as e:\\n
-      \       return {\\n            \\\"success\\\": False,\\n            \\\"mac\\\":
-      mac,\\n            \\\"site_id\\\": site_id,\\n            \\\"error\\\": str(e),\\n
-      \           \\\"timestamp\\\": datetime.now().isoformat()\\n        }\\n\\n@mcp.tool()\\ndef
-      list_hosts_cloud(page_size: int = 100) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"List
-      hosts using UniFi Site Manager (cloud) API\\\"\\\"\\\"\\n    result = {\\n        \\\"success\\\":
-      False,\\n        \\\"method\\\": \\\"cloud_api\\\",\\n        \\\"data\\\":
-      [],\\n        \\\"error\\\": None,\\n        \\\"api_used\\\": \\\"sitemanager_cloud\\\"\\n
-      \   }\\n    \\n    if not (SM_BASE and SM_TOKEN):\\n        result[\\\"error\\\"]
-      = \\\"Cloud API requires UNIFI_SITEMGR_BASE and UNIFI_SITEMGR_TOKEN\\\"\\n        return
-      result\\n    \\n    try:\\n        headers = {\\n            \\\"Accept\\\":
-      \\\"application/json\\\",\\n            \\\"X-API-KEY\\\": SM_TOKEN,\\n            \\\"Content-Type\\\":
-      \\\"application/json\\\"\\n        }\\n        \\n        params = {\\\"limit\\\":
-      page_size}\\n        \\n        url = f\\\"{SM_BASE}/v1/hosts\\\"\\n        validated_url
-      = validate_url(url, \\\"cloud hosts list\\\")\\n        \\n        resp = requests.get(validated_url,
-      headers=headers, params=params, verify=VERIFY_TLS, timeout=REQUEST_TIMEOUT_S)\\n
-      \       \\n        if resp.status_code == 200:\\n            data = resp.json()\\n
-      \           result[\\\"success\\\"] = True\\n            result[\\\"data\\\"]
-      = data.get(\\\"data\\\", data)\\n            result[\\\"count\\\"] = len(result[\\\"data\\\"])\\n
-      \           result[\\\"raw_response\\\"] = data\\n        else:\\n            result[\\\"error\\\"]
-      = f\\\"HTTP {resp.status_code}: {resp.text[:500]}\\\"\\n            \\n    except
-      Exception as e:\\n        result[\\\"error\\\"] = str(e)\\n    \\n    return
-      result\\n\\n@mcp.tool()\\ndef list_all_hosts(site_id: str = None, include_cloud:
-      bool = False) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Comprehensive host
-      listing from local controller and optionally cloud\\\"\\\"\\\"\\n    if site_id
-      is None:\\n        sites = get_correct_site_ids()\\n        site_id = sites[0]
-      if sites else \\\"default\\\"\\n    \\n    result = {\\n        \\\"success\\\":
-      False,\\n        \\\"timestamp\\\": datetime.now().isoformat(),\\n        \\\"methods_tried\\\":
-      [],\\n        \\\"local\\\": {},\\n        \\\"cloud\\\": {},\\n        \\\"combined_data\\\":
-      [],\\n        \\\"summary\\\": {}\\n    }\\n    \\n    # Try local Integration
-      API first\\n    local_result = list_hosts(site_id)\\n    result[\\\"local\\\"]
-      = local_result\\n    result[\\\"methods_tried\\\"].append(\\\"integration_api\\\")\\n
-      \   \\n    # Try cloud API if requested and available\\n    if include_cloud:\\n
-      \       cloud_result = list_hosts_cloud()\\n        result[\\\"cloud\\\"] =
-      cloud_result\\n        result[\\\"methods_tried\\\"].append(\\\"cloud_api\\\")\\n
-      \   \\n    # Combine data\\n    combined_hosts = []\\n    \\n    if local_result.get(\\\"success\\\"):\\n
-      \       # Add local clients and devices\\n        local_clients = local_result.get(\\\"clients\\\",
-      [])\\n        local_devices = local_result.get(\\\"devices\\\", [])\\n        \\n
-      \       for client in local_clients:\\n            client[\\\"source\\\"] =
-      \\\"local\\\"\\n            combined_hosts.append(client)\\n        \\n        for
-      device in local_devices:\\n            device[\\\"source\\\"] = \\\"local\\\"\\n
-      \           combined_hosts.append(device)\\n    \\n    if include_cloud and
-      result[\\\"cloud\\\"].get(\\\"success\\\"):\\n        # Add cloud hosts with
-      a marker\\n        cloud_hosts = result[\\\"cloud\\\"].get(\\\"data\\\", [])\\n
-      \       for host in cloud_hosts:\\n            host[\\\"source\\\"] = \\\"cloud\\\"\\n
-      \       combined_hosts.extend(cloud_hosts)\\n    \\n    result[\\\"combined_data\\\"]
-      = combined_hosts\\n    result[\\\"success\\\"] = len(combined_hosts) \\u003e
-      0\\n    \\n    # Generate summary\\n    result[\\\"summary\\\"] = {\\n        \\\"total_hosts\\\":
-      len(combined_hosts),\\n        \\\"local_success\\\": local_result.get(\\\"success\\\",
-      False),\\n        \\\"cloud_success\\\": result[\\\"cloud\\\"].get(\\\"success\\\",
-      False) if include_cloud else \\\"not_requested\\\",\\n        \\\"local_count\\\":
-      len(local_result.get(\\\"clients\\\", [])) + len(local_result.get(\\\"devices\\\",
-      [])) if local_result.get(\\\"success\\\") else 0,\\n        \\\"cloud_count\\\":
-      len(result[\\\"cloud\\\"].get(\\\"data\\\", [])) if include_cloud and result[\\\"cloud\\\"].get(\\\"success\\\")
-      else 0\\n    }\\n    \\n    return result\\n\\n@mcp.tool() \\ndef find_host_everywhere(identifier:
-      str, site_id: str = None) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Search
-      for a host by MAC, hostname, or name across local and cloud\\\"\\\"\\\"\\n    if
-      site_id is None:\\n        sites = get_correct_site_ids()\\n        site_id
-      = sites[0] if sites else \\\"default\\\"\\n        \\n    result = {\\n        \\\"success\\\":
-      False,\\n        \\\"identifier\\\": identifier,\\n        \\\"site_id\\\":
-      site_id,\\n        \\\"matches\\\": [],\\n        \\\"search_locations\\\":
-      []\\n    }\\n    \\n    try:\\n        # Get comprehensive host list\\n        all_hosts
-      = list_all_hosts(site_id, include_cloud=True)\\n        \\n        if not all_hosts.get(\\\"success\\\"):\\n
-      \           result[\\\"error\\\"] = \\\"Failed to retrieve host data\\\"\\n
-      \           return result\\n        \\n        # Search through all hosts\\n
-      \       identifier_lower = identifier.lower()\\n        matches = []\\n        \\n
-      \       for host in all_hosts.get(\\\"combined_data\\\", []):\\n            #
-      Check MAC address\\n            if host.get(\\\"mac\\\", \\\"\\\").lower() ==
-      identifier_lower:\\n                matches.append({\\\"match_type\\\": \\\"mac\\\",
-      \\\"host\\\": host})\\n                continue\\n            \\n            #
-      Check hostname\\n            hostname = host.get(\\\"hostname\\\") or \\\"\\\"\\n
-      \           if identifier_lower in hostname.lower():\\n                matches.append({\\\"match_type\\\":
-      \\\"hostname\\\", \\\"host\\\": host})\\n                continue\\n                \\n
-      \           # Check name field\\n            name = host.get(\\\"name\\\") or
-      \\\"\\\"\\n            if identifier_lower in name.lower():\\n                matches.append({\\\"match_type\\\":
-      \\\"name\\\", \\\"host\\\": host})\\n                continue\\n        \\n
-      \       result[\\\"success\\\"] = True\\n        result[\\\"matches\\\"] = matches\\n
-      \       result[\\\"match_count\\\"] = len(matches)\\n        result[\\\"search_locations\\\"]
-      = all_hosts.get(\\\"methods_tried\\\", [])\\n        \\n        return result\\n
-      \       \\n    except Exception as e:\\n        result[\\\"error\\\"] = str(e)\\n
-      \       return result\\n\\n# ========= Prompt playbooks =========\\n@mcp.prompt(\\\"how_to_check_unifi_health\\\")\\ndef
-      how_to_check_unifi_health():\\n    return {\\n        \\\"description\\\": \\\"Check
-      UniFi controller health via Integration API.\\\",\\n        \\\"messages\\\":
-      [{\\n            \\\"role\\\": \\\"system\\\",\\n            \\\"content\\\":
-      (\\n                \\\"To check UniFi health, call 'health://unifi' (or 'unifi://health'
-      / 'status://unifi'). \\\"\\n                \\\"If resources are unavailable,
-      call the 'unifi_health' tool instead.\\\"\\n            )\\n        }]\\n    }\\n\\n@mcp.prompt(\\\"how_to_check_system_status\\\")\\ndef
-      how_to_check_system_status():\\n    return {\\n        \\\"description\\\":
-      \\\"Check overall UniFi system health and status.\\\",\\n        \\\"messages\\\":
-      [{\\n            \\\"role\\\": \\\"system\\\",\\n            \\\"content\\\":
-      (\\n                \\\"To check system status, use 'get_system_status' tool
-      or 'status://system' resource. \\\"\\n                \\\"This provides comprehensive
-      health info for all UniFi services including devices, \\\"\\n                \\\"clients,
-      Access, and Protect components.\\\"\\n            )\\n        }]\\n    }\\n\\n@mcp.prompt(\\\"how_to_monitor_devices\\\")\\ndef
-      how_to_monitor_devices():\\n    return {\\n        \\\"description\\\": \\\"Monitor
-      device health and identify issues.\\\",\\n        \\\"messages\\\": [{\\n            \\\"role\\\":
-      \\\"system\\\", \\n            \\\"content\\\": (\\n                \\\"Use
-      'get_device_health' tool or 'status://devices' resource to get device health
-      summary. \\\"\\n                \\\"This shows online/offline counts, device
-      types, uptime stats, and highlights any offline devices.\\\"\\n            )\\n
-      \       }]\\n    }\\n\\n@mcp.prompt(\\\"how_to_check_network_activity\\\")\\ndef
-      how_to_check_network_activity():\\n    return {\\n        \\\"description\\\":
-      \\\"Check current network activity and client usage.\\\",\\n        \\\"messages\\\":
-      [{\\n            \\\"role\\\": \\\"system\\\",\\n            \\\"content\\\":
-      (\\n                \\\"Use 'get_client_activity' tool or 'status://clients'
-      resource to see active clients, \\\"\\n                \\\"bandwidth usage,
-      connection types (wired/wireless), and top bandwidth users.\\\"\\n            )\\n
-      \       }]\\n    }\\n\\n@mcp.prompt(\\\"how_to_find_device\\\")\\ndef how_to_find_device():\\n
-      \   return {\\n        \\\"description\\\": \\\"Find a network device and flash
-      its LEDs.\\\",\\n        \\\"messages\\\": [{\\\"role\\\": \\\"system\\\",\\n
-      \                     \\\"content\\\": \\\"Search device via 'sites://{site_id}/search/devices/{query}',
-      confirm, then call 'locate_device' for ~30s.\\\"}]\\n    }\\n\\n@mcp.prompt(\\\"how_to_block_client\\\")\\ndef
-      how_to_block_client():\\n    return {\\n        \\\"description\\\": \\\"Find
-      \\u0026 block a client safely.\\\",\\n        \\\"messages\\\": [{\\\"role\\\":
-      \\\"system\\\",\\n                      \\\"content\\\": \\\"List 'sites://{site_id}/clients/active',
-      match MAC/host, confirm with user, then call 'block_client'. Offer 'unblock_client'
-      as a reversal.\\\"}]\\n    }\\n\\n@mcp.prompt(\\\"how_to_toggle_wlan\\\")\\ndef
-      how_to_toggle_wlan():\\n    return {\\n        \\\"description\\\": \\\"Toggle
-      a WLAN using Integration if available, else Legacy.\\\",\\n        \\\"messages\\\":
-      [{\\\"role\\\": \\\"system\\\",\\n                      \\\"content\\\": \\\"Fetch
-      'sites://{site_id}/wlans'. If returns an error object with ok:false, request
-      legacy creds, then call 'wlan_set_enabled_legacy'.\\\"}]\\n    }\\n\\n@mcp.prompt(\\\"how_to_list_hosts\\\")\\ndef
-      how_to_list_hosts():\\n    return {\\n        \\\"description\\\": \\\"List
-      all hosts using local and cloud APIs.\\\",\\n        \\\"messages\\\": [{\\n
-      \           \\\"role\\\": \\\"system\\\",\\n            \\\"content\\\": (\\n
-      \               \\\"Use 'working_list_hosts_example' for a complete working
-      implementation, \\\"\\n                \\\"'list_hosts_api_format' for cloud
-      API format, or 'list_hosts_fixed' for local API with proper site discovery.
-      \\\"\\n                \\\"Run 'discover_sites' first if you need to find valid
-      site IDs.\\\"\\n            )\\n        }]\\n    }\\n\\n@mcp.prompt(\\\"how_to_debug_api_issues\\\")\\ndef
-      how_to_debug_api_issues():\\n    return {\\n        \\\"description\\\": \\\"Debug
-      UniFi API connectivity and configuration issues.\\\",\\n        \\\"messages\\\":
-      [{\\n            \\\"role\\\": \\\"system\\\",\\n            \\\"content\\\":
-      (\\n                \\\"Use 'debug_api_connectivity' to test all API endpoints
-      and get troubleshooting recommendations. \\\"\\n                \\\"Use 'discover_sites'
-      to find correct site IDs. Check environment configuration with the debug results.\\\"\\n
-      \           )\\n        }]\\n    }\\n\\n# ========= Site Manager API Tools (Cloud-based)
-      =========\\n\\ndef call_sitemanager_api(endpoint: str, method: str = \\\"GET\\\",
-      body: Dict = None) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"Helper to call
-      Site Manager API endpoints\\\"\\\"\\\"\\n    if not (SM_BASE and SM_TOKEN):\\n
-      \       return {\\n            \\\"success\\\": False,\\n            \\\"error\\\":
-      \\\"Site Manager API requires UNIFI_SITEMGR_BASE and UNIFI_SITEMGR_TOKEN environment
-      variables\\\"\\n        }\\n\\n    try:\\n        url = f\\\"{SM_BASE}{endpoint}\\\"\\n
-      \       validated_url = validate_url(url, \\\"sitemanager api call\\\")\\n\\n
-      \       headers = {\\n            \\\"Accept\\\": \\\"application/json\\\",\\n
-      \           \\\"X-API-KEY\\\": SM_TOKEN,\\n            \\\"Content-Type\\\":
-      \\\"application/json\\\"\\n        }\\n\\n        if method == \\\"POST\\\":\\n
-      \           resp = requests.post(validated_url, headers=headers, json=body,
-      verify=True, timeout=REQUEST_TIMEOUT_S)\\n        else:\\n            resp =
-      requests.get(validated_url, headers=headers, verify=True, timeout=REQUEST_TIMEOUT_S)\\n\\n
-      \       if resp.status_code == 200:\\n            data = resp.json()\\n            return
-      {\\n                \\\"success\\\": True,\\n                \\\"data\\\": data.get(\\\"data\\\",
-      data),\\n                \\\"count\\\": len(data.get(\\\"data\\\", [])) if isinstance(data.get(\\\"data\\\"),
-      list) else None,\\n                \\\"raw_response\\\": data\\n            }\\n
-      \       elif resp.status_code == 429:\\n            return {\\n                \\\"success\\\":
-      False,\\n                \\\"error\\\": f\\\"Rate limit exceeded. Retry after:
-      {resp.headers.get('Retry-After', 'unknown')} seconds\\\"\\n            }\\n
-      \       else:\\n            return {\\n                \\\"success\\\": False,\\n
-      \               \\\"error\\\": f\\\"HTTP {resp.status_code}: {resp.text[:500]}\\\"\\n
-      \           }\\n    except Exception as e:\\n        return {\\n            \\\"success\\\":
-      False,\\n            \\\"error\\\": str(e)\\n        }\\n\\n@mcp.tool()\\ndef
-      list_active_clients() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    List
-      all active clients across all sites using Site Manager API.\\n    Returns client
-      statistics including WiFi/wired breakdown.\\n    Uses cloud API - no site_id
-      needed.\\n    \\\"\\\"\\\"\\n    # Use /v1/sites for real-time client statistics\\n
-      \   result = call_sitemanager_api(\\\"/v1/sites\\\")\\n\\n    if result.get(\\\"success\\\"):\\n
-      \       sites = result.get(\\\"data\\\", [])\\n\\n        if not sites:\\n            return
-      {\\n                \\\"success\\\": False,\\n                \\\"error\\\":
-      \\\"No sites found\\\",\\n                \\\"timestamp\\\": datetime.now().isoformat()\\n
-      \           }\\n\\n        # Use the first site's statistics\\n        site
-      = sites[0]\\n        stats = site.get(\\\"statistics\\\", {}).get(\\\"counts\\\",
-      {})\\n\\n        client_summary = {\\n            \\\"wifi_clients\\\": stats.get(\\\"wifiClient\\\",
-      0),\\n            \\\"wired_clients\\\": stats.get(\\\"wiredClient\\\", 0),\\n
-      \           \\\"guest_clients\\\": stats.get(\\\"guestClient\\\", 0),\\n            \\\"total_clients\\\":
-      stats.get(\\\"wifiClient\\\", 0) + stats.get(\\\"wiredClient\\\", 0),\\n            \\\"site_name\\\":
-      site.get(\\\"meta\\\", {}).get(\\\"name\\\", \\\"default\\\")\\n        }\\n\\n
-      \       return {\\n            \\\"success\\\": True,\\n            \\\"clients\\\":
-      client_summary,\\n            \\\"count\\\": client_summary[\\\"total_clients\\\"],\\n
-      \           \\\"timestamp\\\": datetime.now().isoformat(),\\n            \\\"api_used\\\":
-      \\\"sitemanager_cloud_sites\\\"\\n        }\\n\\n    return result\\n\\n@mcp.tool()\\ndef
-      get_device_health() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Get health
-      status of all UniFi devices (APs, switches, gateways).\\n    Returns device
-      status, uptime, CPU, memory, connectivity.\\n    Uses Site Manager cloud API
-      (/v1/sites endpoint for real-time statistics).\\n    \\\"\\\"\\\"\\n    # Use
-      /v1/sites which has real-time statistics instead of /v1/devices which can be
-      stale\\n    result = call_sitemanager_api(\\\"/v1/sites\\\")\\n\\n    if result.get(\\\"success\\\"):\\n
-      \       sites = result.get(\\\"data\\\", [])\\n\\n        if not sites:\\n            return
-      {\\n                \\\"success\\\": False,\\n                \\\"error\\\":
-      \\\"No sites found\\\",\\n                \\\"timestamp\\\": datetime.now().isoformat()\\n
-      \           }\\n\\n        # Use the first site's statistics (most users have
-      one site)\\n        site = sites[0]\\n        stats = site.get(\\\"statistics\\\",
-      {}).get(\\\"counts\\\", {})\\n\\n        health_summary = {\\n            \\\"total_devices\\\":
-      stats.get(\\\"totalDevice\\\", 0),\\n            \\\"online\\\": stats.get(\\\"totalDevice\\\",
-      0) - stats.get(\\\"offlineDevice\\\", 0),\\n            \\\"offline\\\": stats.get(\\\"offlineDevice\\\",
-      0),\\n            \\\"wifi_devices\\\": stats.get(\\\"wifiDevice\\\", 0),\\n
-      \           \\\"wired_devices\\\": stats.get(\\\"wiredDevice\\\", 0),\\n            \\\"gateway_devices\\\":
-      stats.get(\\\"gatewayDevice\\\", 0),\\n            \\\"pending_updates\\\":
-      stats.get(\\\"pendingUpdateDevice\\\", 0),\\n            \\\"active_clients\\\":
-      {\\n                \\\"wifi\\\": stats.get(\\\"wifiClient\\\", 0),\\n                \\\"wired\\\":
-      stats.get(\\\"wiredClient\\\", 0),\\n                \\\"guest\\\": stats.get(\\\"guestClient\\\",
-      0),\\n                \\\"total\\\": stats.get(\\\"wifiClient\\\", 0) + stats.get(\\\"wiredClient\\\",
-      0)\\n            },\\n            \\\"site_name\\\": site.get(\\\"meta\\\",
-      {}).get(\\\"name\\\", \\\"default\\\"),\\n            \\\"critical_notifications\\\":
-      stats.get(\\\"criticalNotification\\\", 0)\\n        }\\n\\n        return {\\n
-      \           \\\"success\\\": True,\\n            \\\"health\\\": health_summary,\\n
-      \           \\\"timestamp\\\": datetime.now().isoformat(),\\n            \\\"api_used\\\":
-      \\\"sitemanager_cloud_sites\\\"\\n        }\\n\\n    return result\\n\\n@mcp.tool()\\ndef
-      get_client_activity() -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Get
-      recent client connection activity and bandwidth usage.\\n    Uses Site Manager
-      cloud API to provide network statistics.\\n    \\\"\\\"\\\"\\n    # Get hosts
-      which contain site and device information\\n    hosts_result = call_sitemanager_api(\\\"/v1/hosts\\\")\\n
-      \   devices_result = call_sitemanager_api(\\\"/v1/devices\\\")\\n\\n    if not
-      hosts_result.get(\\\"success\\\"):\\n        return hosts_result\\n\\n    activity
-      = {\\n        \\\"hosts\\\": hosts_result.get(\\\"data\\\", []),\\n        \\\"host_count\\\":
-      len(hosts_result.get(\\\"data\\\", [])),\\n        \\\"devices\\\": devices_result.get(\\\"data\\\",
-      []) if devices_result.get(\\\"success\\\") else [],\\n        \\\"device_count\\\":
-      len(devices_result.get(\\\"data\\\", [])) if devices_result.get(\\\"success\\\")
-      else 0,\\n        \\\"timestamp\\\": datetime.now().isoformat(),\\n        \\\"api_used\\\":
-      \\\"sitemanager_cloud\\\"\\n    }\\n\\n    return {\\n        \\\"success\\\":
-      True,\\n        \\\"activity\\\": activity\\n    }\\n\\n@mcp.tool()\\ndef get_sites()
-      -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    List all UniFi sites managed
-      under this account.\\n    Uses Site Manager cloud API.\\n    \\\"\\\"\\\"\\n
-      \   result = call_sitemanager_api(\\\"/v1/sites\\\")\\n\\n    if result.get(\\\"success\\\"):\\n
-      \       return {\\n            \\\"success\\\": True,\\n            \\\"sites\\\":
-      result.get(\\\"data\\\", []),\\n            \\\"count\\\": result.get(\\\"count\\\",
-      0),\\n            \\\"timestamp\\\": datetime.now().isoformat(),\\n            \\\"api_used\\\":
-      \\\"sitemanager_cloud\\\"\\n        }\\n\\n    return result\\n\\n@mcp.tool()\\ndef
-      get_isp_metrics(interval: str = \\\"5m\\\", sites: List[str] = None) -\\u003e
-      Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Query ISP performance metrics (latency,
-      packet loss, bandwidth).\\n    Uses Site Manager cloud API (POST /ea/isp-metrics/:type/query).\\n\\n
-      \   Args:\\n        interval: Metric interval - either \\\"5m\\\" (24hrs retention)
-      or \\\"1h\\\" (30 days retention)\\n        sites: Optional list of site IDs
-      to query. If None, queries all accessible sites.\\n    \\\"\\\"\\\"\\n    query_body
-      = {\\n        \\\"sites\\\": sites if sites else []\\n    }\\n\\n    result
-      = call_sitemanager_api(\\n        f\\\"/ea/isp-metrics/{interval}/query\\\",\\n
-      \       method=\\\"POST\\\",\\n        body=query_body\\n    )\\n\\n    if result.get(\\\"success\\\"):\\n
-      \       return {\\n            \\\"success\\\": True,\\n            \\\"interval\\\":
-      interval,\\n            \\\"retention\\\": \\\"24 hours\\\" if interval == \\\"5m\\\"
-      else \\\"30 days\\\",\\n            \\\"sites_queried\\\": len(sites) if sites
-      else \\\"all\\\",\\n            \\\"data\\\": result.get(\\\"data\\\", {}),\\n
-      \           \\\"status\\\": result.get(\\\"raw_response\\\", {}).get(\\\"status\\\",
-      \\\"success\\\"),\\n            \\\"timestamp\\\": datetime.now().isoformat(),\\n
-      \           \\\"api_used\\\": \\\"sitemanager_cloud\\\"\\n        }\\n\\n    return
-      result\\n\\n@mcp.tool()\\ndef get_host_by_id(host_id: str) -\\u003e Dict[str,
-      Any]:\\n    \\\"\\\"\\\"\\n    Get detailed information about a specific UniFi
-      host by ID.\\n    Uses Site Manager cloud API (GET /v1/hosts/:id).\\n\\n    Args:\\n
-      \       host_id: Unique host identifier\\n    \\\"\\\"\\\"\\n    result = call_sitemanager_api(f\\\"/v1/hosts/{host_id}\\\")\\n\\n
-      \   if result.get(\\\"success\\\"):\\n        return {\\n            \\\"success\\\":
-      True,\\n            \\\"host\\\": result.get(\\\"data\\\", {}),\\n            \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n            \\\"api_used\\\": \\\"sitemanager_cloud\\\"\\n
-      \       }\\n\\n    return result\\n\\n@mcp.tool()\\ndef list_sd_wan_configs()
-      -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    List all SD-WAN configurations
-      for the UI account.\\n    Uses Site Manager cloud API (GET /ea/sd-wan-configs).\\n
-      \   Early Access endpoint - 100 requests/minute limit.\\n    \\\"\\\"\\\"\\n
-      \   result = call_sitemanager_api(\\\"/ea/sd-wan-configs\\\")\\n\\n    if result.get(\\\"success\\\"):\\n
-      \       return {\\n            \\\"success\\\": True,\\n            \\\"configs\\\":
-      result.get(\\\"data\\\", []),\\n            \\\"count\\\": result.get(\\\"count\\\",
-      0),\\n            \\\"timestamp\\\": datetime.now().isoformat(),\\n            \\\"api_used\\\":
-      \\\"sitemanager_cloud_ea\\\",\\n            \\\"rate_limit\\\": \\\"100 requests/minute\\\"\\n
-      \       }\\n\\n    return result\\n\\n@mcp.tool()\\ndef get_sd_wan_config_by_id(config_id:
-      str) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Get detailed information
-      about a specific SD-WAN configuration.\\n    Uses Site Manager cloud API (GET
-      /ea/sd-wan-configs/:id).\\n    Early Access endpoint - 100 requests/minute limit.\\n\\n
-      \   Args:\\n        config_id: SD-WAN configuration identifier\\n    \\\"\\\"\\\"\\n
-      \   result = call_sitemanager_api(f\\\"/ea/sd-wan-configs/{config_id}\\\")\\n\\n
-      \   if result.get(\\\"success\\\"):\\n        return {\\n            \\\"success\\\":
-      True,\\n            \\\"config\\\": result.get(\\\"data\\\", {}),\\n            \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n            \\\"api_used\\\": \\\"sitemanager_cloud_ea\\\"\\n
-      \       }\\n\\n    return result\\n\\n@mcp.tool()\\ndef get_sd_wan_config_status(config_id:
-      str) -\\u003e Dict[str, Any]:\\n    \\\"\\\"\\\"\\n    Get deployment status,
-      progress, and errors for an SD-WAN configuration.\\n    Uses Site Manager cloud
-      API (GET /ea/sd-wan-configs/:id/status).\\n    Early Access endpoint - 100 requests/minute
-      limit.\\n\\n    Args:\\n        config_id: SD-WAN configuration identifier\\n
-      \   \\\"\\\"\\\"\\n    result = call_sitemanager_api(f\\\"/ea/sd-wan-configs/{config_id}/status\\\")\\n\\n
-      \   if result.get(\\\"success\\\"):\\n        return {\\n            \\\"success\\\":
-      True,\\n            \\\"status\\\": result.get(\\\"data\\\", {}),\\n            \\\"timestamp\\\":
-      datetime.now().isoformat(),\\n            \\\"api_used\\\": \\\"sitemanager_cloud_ea\\\"\\n
-      \       }\\n\\n    return result\\n\\n# ========= Entrypoint =========\\nif
-      __name__ == \\\"__main__\\\":\\n    print(\\\"\U0001F680 UniFi MCP — Integration
-      + Legacy + Access + Protect (+ Site Manager stubs)\\\")\\n    print(f\\\"→ Controller:
-      https://{UNIFI_HOST}:{UNIFI_PORT}  TLS verify={VERIFY_TLS}\\\")\\n    print(f\\\"\U0001F512
-      SSRF Protection: Allowed hosts = {', '.join(ALLOWED_HOSTS)}\\\")\\n    \\n    if
-      not UNIFI_API_KEY:\\n        print(\\\"⚠️ UNIFI_API_KEY not set — Integration/Access/Protect
-      key-based calls may fail.\\\")\\n    \\n    # Show discovered sites on startup\\n
-      \   sites = get_correct_site_ids()\\n    if sites:\\n        print(f\\\"\U0001F3E2
-      Discovered sites: {', '.join(sites)}\\\")\\n    else:\\n        print(\\\"⚠️
-      No sites discovered - check API credentials\\\")\\n    \\n    mcp.run(transport=\\\"stdio\\\")\\n\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"creationTimestamp\":null,\"name\":\"unifi-mcp-fixed-code\",\"namespace\":\"cortex-system\"}}\n"
-  creationTimestamp: "2025-12-27T12:01:51Z"
   name: unifi-mcp-fixed-code
   namespace: cortex-system
-  resourceVersion: "188055435"
-  uid: 8096b3df-8d41-452f-ae98-6d481baeb25c
+  labels:
+    app: unifi-mcp-server
+data:
+  main.py: |
+    # main.py
+    # UniFi MCP Server — UI.com Cloud API ONLY
+    # Uses https://api.ui.com/v1/ with X-API-KEY header
+    # NO legacy API, NO local controller access
+
+    from typing import Any, Dict, List, Optional
+    from datetime import datetime
+    import os
+    import json
+    import requests
+    from mcp.server.fastmcp import FastMCP
+
+    # ========= Configuration =========
+    # UI.com Cloud API - THE ONLY API WE USE
+    UNIFI_API_BASE = os.getenv("UNIFI_API_BASE", "https://api.ui.com")
+    UNIFI_API_KEY = os.getenv("UNIFI_API_KEY", "")
+    UNIFI_API_VERSION = os.getenv("UNIFI_API_VERSION", "v1")
+
+    # Build base URL
+    API_BASE = f"{UNIFI_API_BASE.rstrip('/')}/{UNIFI_API_VERSION}"
+
+    REQUEST_TIMEOUT_S = int(os.getenv("UNIFI_TIMEOUT_S", "30"))
+
+    mcp = FastMCP("unifi")
+
+    # ========= API Helper Functions =========
+    def _headers() -> Dict[str, str]:
+        """Get headers for UI.com Cloud API requests"""
+        return {
+            "X-API-KEY": UNIFI_API_KEY,
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+
+    def _get(endpoint: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """Make GET request to UI.com Cloud API"""
+        url = f"{API_BASE}/{endpoint.lstrip('/')}"
+        r = requests.get(url, headers=_headers(), params=params, timeout=REQUEST_TIMEOUT_S)
+        r.raise_for_status()
+        return r.json()
+
+    def _post(endpoint: str, body: Optional[Dict] = None) -> Dict[str, Any]:
+        """Make POST request to UI.com Cloud API"""
+        url = f"{API_BASE}/{endpoint.lstrip('/')}"
+        r = requests.post(url, headers=_headers(), json=body, timeout=REQUEST_TIMEOUT_S)
+        r.raise_for_status()
+        return r.json()
+
+    def _put(endpoint: str, body: Optional[Dict] = None) -> Dict[str, Any]:
+        """Make PUT request to UI.com Cloud API"""
+        url = f"{API_BASE}/{endpoint.lstrip('/')}"
+        r = requests.put(url, headers=_headers(), json=body, timeout=REQUEST_TIMEOUT_S)
+        r.raise_for_status()
+        return r.json()
+
+    def _delete(endpoint: str) -> Dict[str, Any]:
+        """Make DELETE request to UI.com Cloud API"""
+        url = f"{API_BASE}/{endpoint.lstrip('/')}"
+        r = requests.delete(url, headers=_headers(), timeout=REQUEST_TIMEOUT_S)
+        r.raise_for_status()
+        return r.json()
+
+    # ========= Health Check =========
+    def _health_check() -> Dict[str, Any]:
+        """Check API health by fetching hosts"""
+        try:
+            result = _get("/hosts")
+            hosts = result.get("data", [])
+            return {
+                "ok": True,
+                "hosts_count": len(hosts),
+                "api_base": API_BASE,
+                "api_mode": "cloud"
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": str(e),
+                "api_base": API_BASE,
+                "api_mode": "cloud"
+            }
+
+    # ========= MCP Resources =========
+    @mcp.resource("health://unifi")
+    async def health_resource() -> str:
+        """UniFi Cloud API health status"""
+        result = _health_check()
+        return json.dumps(result, indent=2)
+
+    @mcp.resource("hosts://unifi")
+    async def hosts_resource() -> str:
+        """List all UniFi hosts (consoles)"""
+        try:
+            result = _get("/hosts")
+            return json.dumps(result.get("data", []), indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    @mcp.resource("sites://unifi")
+    async def sites_resource() -> str:
+        """List all UniFi sites"""
+        try:
+            result = _get("/sites")
+            return json.dumps(result.get("data", []), indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    @mcp.resource("devices://unifi")
+    async def devices_resource() -> str:
+        """List all UniFi devices"""
+        try:
+            result = _get("/devices")
+            return json.dumps(result.get("data", []), indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    # ========= MCP Tools =========
+    @mcp.tool()
+    def get_system_health() -> Dict[str, Any]:
+        """Get UniFi Cloud API health status"""
+        return _health_check()
+
+    @mcp.tool()
+    def list_hosts() -> Dict[str, Any]:
+        """
+        List all UniFi hosts (consoles) registered with UI.com
+
+        Returns list of hosts with their status, type, and details
+        """
+        try:
+            result = _get("/hosts")
+            hosts = result.get("data", [])
+            return {
+                "ok": True,
+                "count": len(hosts),
+                "hosts": hosts
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def list_sites() -> Dict[str, Any]:
+        """
+        List all UniFi sites
+
+        Returns list of sites with their configuration
+        """
+        try:
+            result = _get("/sites")
+            sites = result.get("data", [])
+            return {
+                "ok": True,
+                "count": len(sites),
+                "sites": sites
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def list_devices(host_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        List all UniFi devices
+
+        Args:
+            host_id: Optional host ID to filter devices by
+
+        Returns list of devices with their status and details
+        """
+        try:
+            params = {}
+            if host_id:
+                params["hostId"] = host_id
+            result = _get("/devices", params=params)
+            devices = result.get("data", [])
+            return {
+                "ok": True,
+                "count": len(devices),
+                "devices": devices
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_device(device_id: str) -> Dict[str, Any]:
+        """
+        Get details for a specific device
+
+        Args:
+            device_id: The device ID to look up
+        """
+        try:
+            result = _get(f"/devices/{device_id}")
+            return {
+                "ok": True,
+                "device": result.get("data", result)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_host(host_id: str) -> Dict[str, Any]:
+        """
+        Get details for a specific host (console)
+
+        Args:
+            host_id: The host ID to look up
+        """
+        try:
+            result = _get(f"/hosts/{host_id}")
+            return {
+                "ok": True,
+                "host": result.get("data", result)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_site(site_id: str) -> Dict[str, Any]:
+        """
+        Get details for a specific site
+
+        Args:
+            site_id: The site ID to look up
+        """
+        try:
+            result = _get(f"/sites/{site_id}")
+            return {
+                "ok": True,
+                "site": result.get("data", result)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_network_status() -> Dict[str, Any]:
+        """
+        Get comprehensive network status report
+
+        Returns summary of all hosts, sites, and devices
+        """
+        try:
+            # Get hosts
+            hosts_result = _get("/hosts")
+            hosts = hosts_result.get("data", [])
+
+            # Get sites
+            sites_result = _get("/sites")
+            sites = sites_result.get("data", [])
+
+            # Get devices
+            devices_result = _get("/devices")
+            devices = devices_result.get("data", [])
+
+            # Summarize devices by type and status
+            device_summary = {}
+            online_count = 0
+            offline_count = 0
+
+            for d in devices:
+                dtype = d.get("productLine", d.get("type", "unknown"))
+                device_summary[dtype] = device_summary.get(dtype, 0) + 1
+
+                state = d.get("reportedState", {})
+                if state.get("state") == "connected":
+                    online_count += 1
+                else:
+                    offline_count += 1
+
+            return {
+                "ok": True,
+                "summary": {
+                    "hosts": len(hosts),
+                    "sites": len(sites),
+                    "devices": {
+                        "total": len(devices),
+                        "online": online_count,
+                        "offline": offline_count,
+                        "by_type": device_summary
+                    }
+                },
+                "hosts": [
+                    {
+                        "id": h.get("id"),
+                        "name": h.get("reportedState", {}).get("hostname", h.get("hardwareId")),
+                        "type": h.get("type")
+                    }
+                    for h in hosts
+                ],
+                "devices": [
+                    {
+                        "id": d.get("id"),
+                        "name": d.get("reportedState", {}).get("name", d.get("hardwareId")),
+                        "type": d.get("productLine", d.get("type")),
+                        "ip": d.get("reportedState", {}).get("ip"),
+                        "status": "online" if d.get("reportedState", {}).get("state") == "connected" else "offline"
+                    }
+                    for d in devices
+                ]
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @mcp.tool()
+    def debug_api() -> Dict[str, Any]:
+        """
+        Debug API configuration and connectivity
+
+        Returns configuration and test results
+        """
+        result = {
+            "config": {
+                "api_base": API_BASE,
+                "api_key_configured": bool(UNIFI_API_KEY),
+                "api_key_prefix": UNIFI_API_KEY[:8] + "..." if UNIFI_API_KEY else None,
+                "timeout": REQUEST_TIMEOUT_S
+            },
+            "tests": {}
+        }
+
+        # Test hosts endpoint
+        try:
+            hosts = _get("/hosts")
+            result["tests"]["hosts"] = {
+                "status": "ok",
+                "count": len(hosts.get("data", []))
+            }
+        except Exception as e:
+            result["tests"]["hosts"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+        # Test sites endpoint
+        try:
+            sites = _get("/sites")
+            result["tests"]["sites"] = {
+                "status": "ok",
+                "count": len(sites.get("data", []))
+            }
+        except Exception as e:
+            result["tests"]["sites"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+        # Test devices endpoint
+        try:
+            devices = _get("/devices")
+            result["tests"]["devices"] = {
+                "status": "ok",
+                "count": len(devices.get("data", []))
+            }
+        except Exception as e:
+            result["tests"]["devices"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+        return result
+
+    # ========= MCP Prompts =========
+    @mcp.prompt("network_status")
+    def prompt_network_status() -> str:
+        """Get a comprehensive network status report"""
+        return """Please provide a comprehensive UniFi network status report including:
+    1. All hosts (consoles) and their status
+    2. All sites configured
+    3. All devices - grouped by type (APs, switches, gateways)
+    4. Any devices that are offline or having issues
+    5. Overall network health assessment"""
+
+    @mcp.prompt("troubleshoot_device")
+    def prompt_troubleshoot_device() -> str:
+        """Help troubleshoot a device issue"""
+        return """I need help troubleshooting a UniFi device. Please:
+    1. List all devices and their current status
+    2. Identify any devices that are offline or degraded
+    3. Provide recommendations for resolving issues"""
+
+    # ========= Main =========
+    if __name__ == "__main__":
+        print("=" * 60)
+        print("UniFi MCP Server - UI.com Cloud API")
+        print("=" * 60)
+        print(f"API Base: {API_BASE}")
+        print(f"API Key: {'configured' if UNIFI_API_KEY else 'NOT SET'}")
+        print("=" * 60)
+
+        if not UNIFI_API_KEY:
+            print("WARNING: UNIFI_API_KEY not set - API calls will fail!")
+
+        mcp.run()

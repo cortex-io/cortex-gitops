@@ -192,6 +192,32 @@ metadata:
   namespace: {{ .Values.global.namespace }}
 
 ---
+# ClusterRole for reading deployments across all cortex namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-fabric-status
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-fabric-status
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}
+    namespace: {{ .Values.global.namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Release.Name }}-fabric-status
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Local role for patching deployments in own namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -200,7 +226,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "patch"]
+    verbs: ["patch"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
