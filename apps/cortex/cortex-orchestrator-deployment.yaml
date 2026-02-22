@@ -22,60 +22,33 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      annotations:
-        kubectl.kubernetes.io/restartedAt: '2026-01-06T18:07:19-06:00'
       creationTimestamp: null
       labels:
         app: cortex-orchestrator
     spec:
       terminationGracePeriodSeconds: 45
       containers:
-      - command:
-        - node
-        - server.js
-        env:
+      - env:
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
               name: anthropic-api-key
               key: api-key
-        - name: SANDFLY_HOST
-          value: 10.88.140.176
-        - name: SANDFLY_USERNAME
-          value: admin
-        - name: SANDFLY_PASSWORD
-          value: emphasize-art-nibble-arguable-paradox-flick-unpack
-        - name: PROXMOX_HOST
-          value: 10.88.140.21
-        - name: PROXMOX_PORT
-          value: '8006'
-        - name: PROXMOX_USERNAME
-          value: root@pam
-        - name: PROXMOX_PASSWORD
-          value: toor
-        - name: UNIFI_HOST
-          value: 10.88.140.16
-        - name: UNIFI_PORT
-          value: '443'
-        - name: UNIFI_USERNAME
-          value: cortex
-        - name: UNIFI_PASSWORD
-          value: cortex
-        - name: UNIFI_SITE
-          value: default
-        - name: UNIFI_IS_UDM
-          value: 'false'
-        - name: UNIFI_MCP_URL
-          value: http://unifi-mcp-server.cortex-system.svc.cluster.local:3000
-        - name: SANDFLY_MCP_URL
-          value: http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000
-        - name: PROXMOX_MCP_URL
-          value: http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000
-        - name: MAX_ITERATIONS
-          value: '50'
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         image: 10.43.170.72:5000/cortex-orchestrator:latest
         imagePullPolicy: Always
-        name: cortex-api
+        name: cortex-orchestrator
         lifecycle:
           preStop:
             exec:
@@ -84,28 +57,32 @@ spec:
               - -c
               - sleep 15
         ports:
-        - containerPort: 8000
+        - containerPort: 8080
           name: http
           protocol: TCP
         readinessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
             scheme: HTTP
-          initialDelaySeconds: 10
+          initialDelaySeconds: 15
           periodSeconds: 10
           timeoutSeconds: 3
           successThreshold: 1
-          failureThreshold: 2
+          failureThreshold: 3
         livenessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
+        volumeMounts:
+        - name: orchestrator-config
+          mountPath: /etc/orchestrator
+          readOnly: true
         resources:
           limits:
             cpu: 400m
@@ -115,9 +92,39 @@ spec:
             memory: 128Mi
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
+      volumes:
+      - name: orchestrator-config
+        configMap:
+          name: cortex-orchestrator-config
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
       serviceAccount: cortex-api
       serviceAccountName: cortex-api
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cortex-orchestrator-config
+  namespace: cortex
+  labels:
+    app: cortex-orchestrator
+data:
+  config.yaml: |
+    integration:
+      kubernetes:
+        in_cluster: true
+        namespace: cortex
+      commit_relay:
+        enabled: false
+
+    orchestration:
+      max_agents: 50
+      spawn_rate_base: 1.0
+      stuck_detection_timeout: 300
+
+    observability:
+      prometheus:
+        enabled: true
+        port: 9090
