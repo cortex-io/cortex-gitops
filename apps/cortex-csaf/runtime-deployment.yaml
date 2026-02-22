@@ -344,7 +344,7 @@ metadata:
   name: csaf-runtime
   namespace: cortex-csaf
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: csaf-runtime
@@ -418,8 +418,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: csaf-runtime
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 5
   metrics:
     - type: Resource
       resource:
