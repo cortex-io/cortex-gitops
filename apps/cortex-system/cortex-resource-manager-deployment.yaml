@@ -29,20 +29,11 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
       - args:
-        - 'set -e
-
-          # Install dependencies from pyproject.toml
-
-          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 kubernetes>=30.0.0 pydantic>=2.0.0
-          python-dotenv>=1.0.0
-
-          # Keep container running - MCP server will be invoked via kubectl exec
-
+        - |
+          set -e
+          pip install --no-cache-dir mcp>=1.9.4 httpx>=0.27.0 kubernetes>=30.0.0 pydantic>=2.0.0 python-dotenv>=1.0.0
           echo "MCP server ready for stdio connections"
-
           tail -f /dev/null
-
-          '
         command:
         - /bin/bash
         - -c
@@ -64,9 +55,9 @@ spec:
         readinessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - "ps aux | grep -v grep | grep -q 'tail -f'"
+            - test
+            - -f
+            - /proc/1/status
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 3
@@ -75,40 +66,23 @@ spec:
         livenessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - "ps aux | grep -v grep | grep -q 'tail -f'"
+            - test
+            - -f
+            - /proc/1/status
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
-        resources: {}
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
-        volumeMounts:
-        - mountPath: /app
-          name: repo
-        workingDir: /app
       dnsPolicy: ClusterFirst
-      initContainers:
-      - args:
-        - clone
-        - --single-branch
-        - --
-        - https://github.com/ry-ops/cortex-resource-manager.git
-        - /repo
-        image: alpine/git
-        imagePullPolicy: Always
-        name: git-clone
-        resources: {}
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-        volumeMounts:
-        - mountPath: /repo
-          name: repo
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
-      volumes:
-      - emptyDir: {}
-        name: repo
