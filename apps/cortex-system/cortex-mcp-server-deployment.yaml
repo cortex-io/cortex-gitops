@@ -199,6 +199,8 @@ spec:
           name: coordination
         - mountPath: /tmp
           name: tmp
+        - mountPath: /wrapper
+          name: sse-wrapper
         workingDir: /app
       dnsPolicy: ClusterFirst
       initContainers:
@@ -319,6 +321,10 @@ spec:
           defaultMode: 420
           name: cortex-mcp-src
         name: source
+      - configMap:
+          defaultMode: 420
+          name: mcp-sse-http-wrapper-node
+        name: sse-wrapper
       - emptyDir: {}
         name: coordination
       - emptyDir: {}
