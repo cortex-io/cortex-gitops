@@ -98,21 +98,29 @@ spec:
         workingDir: /app
       dnsPolicy: ClusterFirst
       initContainers:
-      - args:
-        - clone
-        - --single-branch
-        - --
-        - https://github.com/cortex-io/unifi-mcp-server.git
-        - /repo
-        image: alpine/git
-        imagePullPolicy: Always
-        name: git-clone
-        resources: {}
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
+      - name: git-clone
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          GH_TOKEN=$(cat /run/secrets/github-token/token 2>/dev/null || echo "")
+          if [ -n "$GH_TOKEN" ]; then
+            git clone --single-branch --depth=1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/cortex-io/unifi-mcp-server.git" /repo
+          else
+            echo "No token available, creating empty workspace"
+            mkdir -p /repo
+          fi
         volumeMounts:
         - mountPath: /repo
           name: repo
+        - mountPath: /run/secrets/github-token
+          name: github-token
+          readOnly: true
+        resources: {}
       - command:
         - cp
         - /fixed/main.py
@@ -143,3 +151,6 @@ spec:
           defaultMode: 420
           name: unifi-mcp-fixed-code
         name: fixed-code
+      - secret:
+          secretName: github-token
+        name: github-token
