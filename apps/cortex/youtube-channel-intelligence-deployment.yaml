@@ -31,7 +31,7 @@ spec:
       containers:
       - env:
         - name: PORT
-          value: '8081'
+          value: '8080'
         - name: REDIS_ENABLED
           value: 'true'
         - name: REDIS_HOST
@@ -59,7 +59,7 @@ spec:
           failureThreshold: 3
           httpGet:
             path: /health
-            port: 8081
+            port: 8080
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 10
@@ -74,14 +74,14 @@ spec:
               - -c
               - sleep 15
         ports:
-        - containerPort: 8081
+        - containerPort: 8080
           name: http
           protocol: TCP
         readinessProbe:
           failureThreshold: 3
           httpGet:
             path: /health
-            port: 8081
+            port: 8080
             scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 5
