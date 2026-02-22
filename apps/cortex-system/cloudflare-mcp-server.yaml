@@ -32,16 +32,27 @@ spec:
     spec:
       initContainers:
       - name: git-clone
-        image: alpine/git
-        args:
-        - clone
-        - --single-branch
-        - --depth=1
-        - https://github.com/cortex-io/cloudflare-mcp-server.git
-        - /repo
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          GH_TOKEN=$(cat /run/secrets/github-token/token 2>/dev/null || echo "")
+          if [ -n "$GH_TOKEN" ]; then
+            git clone --single-branch --depth=1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/cortex-io/cloudflare-mcp-server.git" /repo
+          else
+            echo "No token available, creating empty workspace"
+            mkdir -p /repo
+          fi
         volumeMounts:
         - name: repo
           mountPath: /repo
+        - name: github-token
+          mountPath: /run/secrets/github-token
+          readOnly: true
       containers:
       - name: app
         image: python:3.11-slim
@@ -207,6 +218,9 @@ spec:
       volumes:
       - name: repo
         emptyDir: {}
+      - name: github-token
+        secret:
+          secretName: github-token
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
