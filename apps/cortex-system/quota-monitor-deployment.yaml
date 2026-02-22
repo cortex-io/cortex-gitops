@@ -88,7 +88,7 @@ spec:
           set -e
           echo "Installing dependencies with retry..."
           for i in 1 2 3 4 5; do
-            if pip install --no-cache-dir --target=/deps fastapi uvicorn pydantic httpx kubernetes; then
+            if pip install --no-cache-dir --target=/deps fastapi uvicorn pydantic httpx kubernetes redis; then
               echo "Dependencies installed successfully"
               exit 0
             fi
@@ -117,6 +117,8 @@ spec:
         env:
         - name: MEMORY_SERVICE_URL
           value: http://memory-service.cortex-system.svc.cluster.local:8080
+        - name: REDIS_URL
+          value: redis://redis-queue.cortex-system.svc.cluster.local:6379
         - name: WARNING_THRESHOLD
           value: "0.75"
         - name: CRITICAL_THRESHOLD
