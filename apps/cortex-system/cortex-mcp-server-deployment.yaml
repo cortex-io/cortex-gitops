@@ -253,7 +253,7 @@ spec:
 
           echo "Copying client files..."
 
-          cp /source/k8s.js /app/src/clients/
+          cp /source/kubernetes.js /app/src/clients/k8s.js
 
           cp /source/proxmox.js /app/src/clients/
 
