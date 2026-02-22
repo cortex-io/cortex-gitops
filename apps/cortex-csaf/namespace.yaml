@@ -4,5 +4,5 @@ metadata:
   name: cortex-csaf
   labels:
     app.kubernetes.io/part-of: cortex
-    security.cortex.ry-ops.dev/zone: trusted
+    security.cortex.cortex-io.dev/zone: trusted
     name: cortex-csaf

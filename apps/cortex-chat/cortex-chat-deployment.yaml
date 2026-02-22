@@ -4,7 +4,7 @@ metadata:
   annotations:
     argocd.argoproj.io/tracking-id: cortex-chat:apps/Deployment:cortex-chat/cortex-chat
     deployment.kubernetes.io/revision: '59'
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:cortex-chat","ingressName":"cortex-chat:cortex-chat","hostname":"chat.ry-ops.dev","path":"/","allNodes":false},{"addresses":["10.88.145.210"],"port":80,"protocol":"TCP","serviceName":"cortex-chat:cortex-chat-frontend","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:cortex-chat","ingressName":"cortex-chat:cortex-chat","hostname":"chat.cortex-io.dev","path":"/","allNodes":false},{"addresses":["10.88.145.210"],"port":80,"protocol":"TCP","serviceName":"cortex-chat:cortex-chat-frontend","allNodes":false}]'
   name: cortex-chat
   namespace: cortex-chat
 spec:

@@ -17,7 +17,7 @@ global:
 replicaCount: 1  # KEDA manages this
 
 image:
-  repository: ghcr.io/ry-ops/cortex-telemetry
+  repository: ghcr.io/cortex-io/cortex-telemetry
   tag: "v0.1.0"
   pullPolicy: IfNotPresent
 

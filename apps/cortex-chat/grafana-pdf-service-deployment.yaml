@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     deployment.kubernetes.io/revision: '2'
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:grafana-pdf-service","hostname":"cortex-reports.ry-ops.dev","path":"/","allNodes":false},{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:cortex-chat","hostname":"chat.ry-ops.dev","path":"/api/report","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:grafana-pdf-service","hostname":"cortex-reports.cortex-io.dev","path":"/","allNodes":false},{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:cortex-chat","hostname":"chat.cortex-io.dev","path":"/api/report","allNodes":false}]'
   name: grafana-pdf-service
   namespace: cortex-chat
 spec:

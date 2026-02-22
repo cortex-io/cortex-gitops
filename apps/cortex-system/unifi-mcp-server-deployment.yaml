@@ -102,7 +102,7 @@ spec:
         - clone
         - --single-branch
         - --
-        - https://github.com/ry-ops/unifi-mcp-server.git
+        - https://github.com/cortex-io/unifi-mcp-server.git
         - /repo
         image: alpine/git
         imagePullPolicy: Always

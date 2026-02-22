@@ -9,8 +9,8 @@ data:
     Tailscale MCP Server
     Network management, device control, ACL, DNS, and exit node management via MCP.
 
-    Author: ry-ops
-    Repository: https://github.com/ry-ops/cortex-platform
+    Author: cortex-io
+    Repository: https://github.com/cortex-io/cortex-platform
     """
 
     import os

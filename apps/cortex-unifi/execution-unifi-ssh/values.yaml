@@ -18,7 +18,7 @@ global:
 replicaCount: 1  # KEDA manages this
 
 image:
-  repository: ghcr.io/ry-ops/unifi-ssh-gateway
+  repository: ghcr.io/cortex-io/unifi-ssh-gateway
   tag: "v0.1.0"
   pullPolicy: IfNotPresent
 

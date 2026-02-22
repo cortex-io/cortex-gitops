@@ -218,7 +218,7 @@ metrics:
 # -----------------------------------------------------------------------------
 ingress:
   enabled: false
-  host: "chat-fabric.ry-ops.dev"
+  host: "chat-fabric.cortex-io.dev"
   tlsSecret: "chat-fabric-tls"
 
 # -----------------------------------------------------------------------------

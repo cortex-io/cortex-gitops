@@ -12,7 +12,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: n8n-mcp.ry-ops.dev
+  - host: n8n-mcp.cortex-io.dev
     http:
       paths:
       - backend:
@@ -24,5 +24,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - n8n-mcp.ry-ops.dev
+    - n8n-mcp.cortex-io.dev
     secretName: n8n-mcp-tls

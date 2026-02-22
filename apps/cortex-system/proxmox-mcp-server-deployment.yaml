@@ -122,7 +122,7 @@ spec:
         - clone
         - --single-branch
         - --
-        - https://github.com/ry-ops/proxmox-mcp-server.git
+        - https://github.com/cortex-io/proxmox-mcp-server.git
         - /repo
         env:
         - name: MCP_COMMAND

@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     deployment.kubernetes.io/revision: '72'
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex:cortex-orchestrator","ingressName":"cortex:cortex-api-ingress","hostname":"cortex-api.ry-ops.dev","path":"/","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex:cortex-orchestrator","ingressName":"cortex:cortex-api-ingress","hostname":"cortex-api.cortex-io.dev","path":"/","allNodes":false}]'
   labels:
     app: cortex-orchestrator
   name: cortex-orchestrator

@@ -12,7 +12,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: knowledge-mcp.ry-ops.dev
+  - host: knowledge-mcp.cortex-io.dev
     http:
       paths:
       - backend:
@@ -24,5 +24,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - knowledge-mcp.ry-ops.dev
+    - knowledge-mcp.cortex-io.dev
     secretName: knowledge-mcp-tls

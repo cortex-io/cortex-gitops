@@ -17,7 +17,7 @@ global:
 replicaCount: 1  # KEDA manages this
 
 image:
-  repository: ghcr.io/ry-ops/unifi-action-engine
+  repository: ghcr.io/cortex-io/unifi-action-engine
   tag: "v0.1.0"
   pullPolicy: IfNotPresent
 

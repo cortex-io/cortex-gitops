@@ -110,7 +110,7 @@ spec:
         - sh
         - -c
         - |
-          git clone https://github.com/ry-ops/cortex-gitops.git /gitops
+          git clone https://github.com/cortex-io/cortex-gitops.git /gitops
         volumeMounts:
         - name: gitops-repo
           mountPath: /gitops
@@ -121,7 +121,7 @@ spec:
         - sh
         - -c
         - |
-          git clone https://github.com/ry-ops/cortex-docs.git /docs
+          git clone https://github.com/cortex-io/cortex-docs.git /docs
         volumeMounts:
         - name: docs-repo
           mountPath: /docs

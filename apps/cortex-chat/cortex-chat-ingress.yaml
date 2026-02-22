@@ -3,13 +3,13 @@ kind: Ingress
 metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod-dns
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:cortex-chat","hostname":"chat.ry-ops.dev","path":"/api/report","allNodes":false},{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:cortex-chat","ingressName":"cortex-chat:cortex-chat","hostname":"chat.ry-ops.dev","path":"/","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:cortex-chat","hostname":"chat.cortex-io.dev","path":"/api/report","allNodes":false},{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:cortex-chat","ingressName":"cortex-chat:cortex-chat","hostname":"chat.cortex-io.dev","path":"/","allNodes":false}]'
   name: cortex-chat
   namespace: cortex-chat
 spec:
   ingressClassName: traefik
   rules:
-  - host: chat.ry-ops.dev
+  - host: chat.cortex-io.dev
     http:
       paths:
       - backend:
@@ -35,5 +35,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - chat.ry-ops.dev
-    secretName: chat-ry-ops-dev-tls
+    - chat.cortex-io.dev
+    secretName: chat-cortex-io-dev-tls

@@ -15,11 +15,11 @@ spec:
       namespace: argocd
       labels:
         app.kubernetes.io/part-of: cortex-security-fabric
-        cortex.ry-ops.dev/fabric: security
+        cortex.cortex-io.dev/fabric: security
     spec:
       project: default
       source:
-        repoURL: https://github.com/ry-ops/cortex-gitops.git
+        repoURL: https://github.com/cortex-io/cortex-gitops.git
         targetRevision: HEAD
         path: "{{path}}"
         helm:

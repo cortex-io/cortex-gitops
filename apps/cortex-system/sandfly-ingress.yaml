@@ -12,7 +12,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: sandfly.ry-ops.dev
+  - host: sandfly.cortex-io.dev
     http:
       paths:
       - backend:

@@ -45,7 +45,7 @@ learning:
 replicaCount: 2  # HA - must always be available
 
 image:
-  repository: ghcr.io/ry-ops/cortex-activator
+  repository: ghcr.io/cortex-io/cortex-activator
   tag: "v0.1.0"
   pullPolicy: IfNotPresent
 

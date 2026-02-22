@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/ry-ops/cortex-unified
+  repository: ghcr.io/cortex-io/cortex-unified
   pullPolicy: IfNotPresent
   tag: "a312763"
 

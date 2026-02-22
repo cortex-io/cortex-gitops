@@ -12,7 +12,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: cortex-desktop-mcp.ry-ops.dev
+  - host: cortex-desktop-mcp.cortex-io.dev
     http:
       paths:
       - backend:
@@ -24,5 +24,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - cortex-desktop-mcp.ry-ops.dev
+    - cortex-desktop-mcp.cortex-io.dev
     secretName: cortex-desktop-mcp-tls

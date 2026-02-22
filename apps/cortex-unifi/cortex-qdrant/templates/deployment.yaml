@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: cortex-qdrant
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: cortex-unifi
-    cortex.ry-ops.dev/layer-type: memory
+    cortex.cortex-io.dev/layer-type: memory
 spec:
   replicas: {{ .Values.replicaCount }}
   strategy:
@@ -21,7 +21,7 @@ spec:
       labels:
         app.kubernetes.io/name: cortex-qdrant
         app.kubernetes.io/instance: {{ .Release.Name }}
-        cortex.ry-ops.dev/layer-type: memory
+        cortex.cortex-io.dev/layer-type: memory
     spec:
       securityContext:
         fsGroup: 1000

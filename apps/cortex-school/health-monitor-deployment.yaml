@@ -61,7 +61,7 @@ spec:
         - name: ROLLBACK_ENABLED
           value: "true"
         - name: GITHUB_REPO
-          value: "ry-ops/cortex-gitops"
+          value: "cortex-io/cortex-gitops"
         - name: GITHUB_TOKEN
           valueFrom:
             secretKeyRef:

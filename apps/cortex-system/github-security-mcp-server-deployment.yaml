@@ -63,7 +63,7 @@ spec:
               name: github-security-token
               key: token
         - name: GITHUB_ORG
-          value: "ry-ops"
+          value: "cortex-io"
         - name: GITHUB_API_URL
           value: "https://api.github.com"
         - name: GITHUB_TIMEOUT

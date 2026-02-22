@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/ry-ops/cortex-gitops
+    repoURL: https://github.com/cortex-io/cortex-gitops
     targetRevision: main
     path: apps/cortex-csaf
   destination:

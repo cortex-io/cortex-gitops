@@ -167,42 +167,42 @@ async def process_query(query: str, context: Dict[str, Any] = None) -> Dict[str,
     # Simple keyword routing to GitHub tools
     if "repo" in query_lower or "repository" in query_lower:
         if "list" in query_lower:
-            result = await call_tool("github-mcp__list_repositories", {"owner": "ry-ops"})
+            result = await call_tool("github-mcp__list_repositories", {"owner": "cortex-io"})
             tool_calls = 1
         elif "create" in query_lower:
             result = {"message": "Repository creation requires specific parameters (name, description, private)"}
         else:
-            result = await call_tool("github-mcp__get_repository", {"owner": "ry-ops", "repo": "cortex-gitops"})
+            result = await call_tool("github-mcp__get_repository", {"owner": "cortex-io", "repo": "cortex-gitops"})
             tool_calls = 1
     elif "issue" in query_lower:
         if "list" in query_lower:
-            result = await call_tool("github-mcp__list_issues", {"owner": "ry-ops", "repo": "cortex-gitops"})
+            result = await call_tool("github-mcp__list_issues", {"owner": "cortex-io", "repo": "cortex-gitops"})
             tool_calls = 1
         elif "create" in query_lower:
             result = {"message": "Issue creation requires: title, body, and optionally labels"}
         else:
-            result = await call_tool("github-mcp__list_issues", {"owner": "ry-ops", "repo": "cortex-gitops", "state": "open"})
+            result = await call_tool("github-mcp__list_issues", {"owner": "cortex-io", "repo": "cortex-gitops", "state": "open"})
             tool_calls = 1
     elif "pr" in query_lower or "pull request" in query_lower:
         if "list" in query_lower:
-            result = await call_tool("github-mcp__list_pull_requests", {"owner": "ry-ops", "repo": "cortex-gitops"})
+            result = await call_tool("github-mcp__list_pull_requests", {"owner": "cortex-io", "repo": "cortex-gitops"})
             tool_calls = 1
         elif "create" in query_lower:
             result = {"message": "PR creation requires: title, body, head branch, base branch"}
         else:
-            result = await call_tool("github-mcp__list_pull_requests", {"owner": "ry-ops", "repo": "cortex-gitops", "state": "open"})
+            result = await call_tool("github-mcp__list_pull_requests", {"owner": "cortex-io", "repo": "cortex-gitops", "state": "open"})
             tool_calls = 1
     elif "commit" in query_lower:
-        result = await call_tool("github-mcp__list_commits", {"owner": "ry-ops", "repo": "cortex-gitops"})
+        result = await call_tool("github-mcp__list_commits", {"owner": "cortex-io", "repo": "cortex-gitops"})
         tool_calls = 1
     elif "branch" in query_lower:
-        result = await call_tool("github-mcp__list_branches", {"owner": "ry-ops", "repo": "cortex-gitops"})
+        result = await call_tool("github-mcp__list_branches", {"owner": "cortex-io", "repo": "cortex-gitops"})
         tool_calls = 1
     elif "workflow" in query_lower or "action" in query_lower:
         if "run" in query_lower:
-            result = await call_tool("github-mcp__list_workflow_runs", {"owner": "ry-ops", "repo": "cortex-gitops"})
+            result = await call_tool("github-mcp__list_workflow_runs", {"owner": "cortex-io", "repo": "cortex-gitops"})
         else:
-            result = await call_tool("github-mcp__list_workflows", {"owner": "ry-ops", "repo": "cortex-gitops"})
+            result = await call_tool("github-mcp__list_workflows", {"owner": "cortex-io", "repo": "cortex-gitops"})
         tool_calls = 1
     elif "search" in query_lower and "code" in query_lower:
         # Extract search term - simple approach

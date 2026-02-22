@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: execution-unifi-api
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: cortex-unifi
-    cortex.ry-ops.dev/layer-type: execution
+    cortex.cortex-io.dev/layer-type: execution
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -19,7 +19,7 @@ spec:
       labels:
         app.kubernetes.io/name: execution-unifi-api
         app.kubernetes.io/instance: {{ .Release.Name }}
-        cortex.ry-ops.dev/layer-type: execution
+        cortex.cortex-io.dev/layer-type: execution
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.metrics.port }}"
@@ -34,7 +34,7 @@ spec:
             - sh
             - -c
             - |
-              git clone --depth 1 https://github.com/ry-ops/cortex-gitops.git /tmp/repo
+              git clone --depth 1 https://github.com/cortex-io/cortex-gitops.git /tmp/repo
               cp /tmp/repo/apps/cortex-unifi/src/action-engine/*.py /code/ 2>/dev/null || echo "No Python files"
           volumeMounts:
             - name: code

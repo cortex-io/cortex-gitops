@@ -5,7 +5,7 @@ metadata:
   namespace: cortex-csaf
 data:
   pod-restart-monitor.yaml: |
-    apiVersion: cortex.ry-ops.dev/v1alpha1
+    apiVersion: cortex.cortex-io.dev/v1alpha1
     kind: SecurityApp
     metadata:
       name: pod-restart-monitor
@@ -58,7 +58,7 @@ data:
         self_heal: true
 
   threat-correlation.yaml: |
-    apiVersion: cortex.ry-ops.dev/v1alpha1
+    apiVersion: cortex.cortex-io.dev/v1alpha1
     kind: SecurityApp
     metadata:
       name: threat-correlation
@@ -126,7 +126,7 @@ data:
         self_heal: true
 
   cert-expiry-watcher.yaml: |
-    apiVersion: cortex.ry-ops.dev/v1alpha1
+    apiVersion: cortex.cortex-io.dev/v1alpha1
     kind: SecurityApp
     metadata:
       name: cert-expiry-watcher

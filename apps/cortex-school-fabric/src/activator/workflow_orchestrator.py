@@ -369,7 +369,7 @@ class WorkflowOrchestrator:
                 {
                     "name": "create_branch",
                     "arguments": {
-                        "repo": "ry-ops/cortex-gitops",
+                        "repo": "cortex-io/cortex-gitops",
                         "branch": branch_name,
                         "from_branch": "main"
                     }

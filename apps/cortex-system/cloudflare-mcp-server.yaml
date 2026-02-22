@@ -37,7 +37,7 @@ spec:
         - clone
         - --single-branch
         - --depth=1
-        - https://github.com/ry-ops/cloudflare-mcp-server.git
+        - https://github.com/cortex-io/cloudflare-mcp-server.git
         - /repo
         volumeMounts:
         - name: repo
@@ -220,7 +220,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: cloudflare-mcp.ry-ops.dev
+  - host: cloudflare-mcp.cortex-io.dev
     http:
       paths:
       - path: /
@@ -232,5 +232,5 @@ spec:
               number: 3000
   tls:
   - hosts:
-    - cloudflare-mcp.ry-ops.dev
+    - cloudflare-mcp.cortex-io.dev
     secretName: cloudflare-mcp-tls

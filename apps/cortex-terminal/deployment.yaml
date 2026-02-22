@@ -48,7 +48,7 @@ spec:
       containers:
         # Main terminal container
         - name: terminal
-          image: ghcr.io/ry-ops/cortex-terminal:fe1f866
+          image: ghcr.io/cortex-io/cortex-terminal:fe1f866
           imagePullPolicy: IfNotPresent
           env:
             - name: ENABLE_SSH

@@ -11,10 +11,10 @@ keywords:
   - claude-code
   - ai-assistant
 
-home: https://github.com/ry-ops/cortex-platform
+home: https://github.com/cortex-io/cortex-platform
 sources:
-  - https://github.com/ry-ops/cortex-platform/tree/main/services/mcp-servers/cortex-unified
+  - https://github.com/cortex-io/cortex-platform/tree/main/services/mcp-servers/cortex-unified
 
 maintainers:
-  - name: ry-ops
-    email: ryan@ry-ops.dev
+  - name: cortex-io
+    email: ryan@cortex-io.dev

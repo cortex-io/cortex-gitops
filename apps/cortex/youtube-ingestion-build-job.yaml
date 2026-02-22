@@ -16,7 +16,7 @@ spec:
         - -c
         - |
           TOKEN=$(cat /secret/token)
-          git clone --depth 1 --branch main "https://ry-ops:${TOKEN}@github.com/ry-ops/cortex-platform.git" /workspace
+          git clone --depth 1 --branch main "https://cortex-io:${TOKEN}@github.com/cortex-io/cortex-platform.git" /workspace
         resources:
           requests:
             cpu: 100m

@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/ry-ops/cortex-gitops.git
+    repoURL: https://github.com/cortex-io/cortex-gitops.git
     targetRevision: main
     path: apps/cortex-knowledge
   destination:

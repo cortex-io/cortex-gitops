@@ -11,10 +11,10 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - portainer.ry-ops.dev
+    - portainer.cortex-io.dev
     secretName: portainer-tls
   rules:
-  - host: portainer.ry-ops.dev
+  - host: portainer.cortex-io.dev
     http:
       paths:
       - path: /

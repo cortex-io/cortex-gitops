@@ -57,7 +57,7 @@ spec:
         - name: WORKER_TYPE
           value: "all"
         - name: GITHUB_REPO
-          value: "ry-ops/cortex-gitops"
+          value: "cortex-io/cortex-gitops"
         - name: GITHUB_BRANCH
           value: "main"
         - name: GITHUB_TOKEN

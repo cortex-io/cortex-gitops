@@ -4,7 +4,7 @@ metadata:
   annotations:
     argocd.argoproj.io/tracking-id: cortex-system:apps/Deployment:cortex-system/cortex-mcp-server
     deployment.kubernetes.io/revision: '8'
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-system:cortex-mcp-server","ingressName":"cortex-system:cortex-mcp-ingress","hostname":"cortex-mcp.ry-ops.dev","path":"/","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-system:cortex-mcp-server","ingressName":"cortex-system:cortex-mcp-ingress","hostname":"cortex-mcp.cortex-io.dev","path":"/","allNodes":false}]'
   labels:
     app: cortex-mcp-server
     component: mcp-gateway

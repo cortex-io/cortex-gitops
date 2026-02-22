@@ -14,10 +14,10 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - observability.ry-ops.dev
+    - observability.cortex-io.dev
     secretName: phoenix-tls
   rules:
-  - host: observability.ry-ops.dev
+  - host: observability.cortex-io.dev
     http:
       paths:
       - path: /

@@ -35,28 +35,28 @@ data:
           - title: Rancher
             description: Kubernetes cluster management
             icon: fas fa-compass
-            url: https://rancher.ry-ops.dev
+            url: https://rancher.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Portainer
             description: Container management UI
             icon: fas fa-box-open
-            url: https://portainer.ry-ops.dev
+            url: https://portainer.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Longhorn
             description: Distributed block storage
             icon: fas fa-hdd
-            url: https://longhorn.ry-ops.dev
+            url: https://longhorn.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: ArgoCD
             description: GitOps continuous delivery
             icon: fas fa-sync-alt
-            url: https://argocd.ry-ops.dev
+            url: https://argocd.cortex-io.dev
             target: newtab
             statusCheck: true
 
@@ -80,35 +80,35 @@ data:
           - title: Cortex Chat
             description: AI chat interface
             icon: fas fa-comments
-            url: https://chat.ry-ops.dev
+            url: https://chat.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Cortex API
             description: Core Cortex API
             icon: fas fa-plug
-            url: https://cortex-api.ry-ops.dev
+            url: https://cortex-api.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Cortex MCP Server
             description: Model Context Protocol server
             icon: fas fa-network-wired
-            url: https://cortex-mcp.ry-ops.dev
+            url: https://cortex-mcp.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Langflow
             description: Visual workflow builder
             icon: fas fa-project-diagram
-            url: https://langflow.ry-ops.dev
+            url: https://langflow.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Cortex Reports
             description: PDF report generation service
             icon: fas fa-file-pdf
-            url: https://cortex-reports.ry-ops.dev
+            url: https://cortex-reports.cortex-io.dev
             target: newtab
             statusCheck: true
 
@@ -125,7 +125,7 @@ data:
           - title: Phoenix Observability
             description: Knowledge management & observability
             icon: fas fa-book
-            url: https://observability.ry-ops.dev
+            url: https://observability.cortex-io.dev
             target: newtab
             statusCheck: true
 
@@ -135,21 +135,21 @@ data:
           - title: Grafana
             description: Metrics visualization & dashboards
             icon: fas fa-chart-area
-            url: https://grafana.ry-ops.dev
+            url: https://grafana.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: Prometheus
             description: Metrics collection & time-series DB
             icon: fas fa-database
-            url: https://prometheus.ry-ops.dev
+            url: https://prometheus.cortex-io.dev
             target: newtab
             statusCheck: true
 
           - title: CheckMK
             description: Infrastructure monitoring
             icon: fas fa-heartbeat
-            url: https://checkmk.ry-ops.dev
+            url: https://checkmk.cortex-io.dev
             target: newtab
             statusCheck: true
 
@@ -166,7 +166,7 @@ data:
           - title: Sandfly
             description: Linux security & agentless scanning
             icon: fas fa-bug
-            url: https://sandfly.ry-ops.dev
+            url: https://sandfly.cortex-io.dev
             target: newtab
             statusCheck: true
 
@@ -176,7 +176,7 @@ data:
           - title: pgAdmin
             description: PostgreSQL administration
             icon: fas fa-elephant
-            url: https://pgadmin.ry-ops.dev
+            url: https://pgadmin.cortex-io.dev
             target: newtab
             statusCheck: true
 
@@ -193,7 +193,7 @@ data:
           - title: SMS Relay
             description: SMS gateway service
             icon: fas fa-sms
-            url: https://sms.ry-ops.dev
+            url: https://sms.cortex-io.dev
             target: newtab
             statusCheck: true
 

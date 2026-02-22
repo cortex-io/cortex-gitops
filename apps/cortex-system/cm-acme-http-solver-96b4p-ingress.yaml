@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":80,"protocol":"HTTP","serviceName":"cortex-system:cm-acme-http-solver-rs6lx","ingressName":"cortex-system:cm-acme-http-solver-96b4p","hostname":"cortex-mcp.ry-ops.dev","path":"/.well-known/acme-challenge/dEniFzswQ-ke4uFjBVBxxqXn92LhEgTTuY0njeUpOow","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":80,"protocol":"HTTP","serviceName":"cortex-system:cm-acme-http-solver-rs6lx","ingressName":"cortex-system:cm-acme-http-solver-96b4p","hostname":"cortex-mcp.cortex-io.dev","path":"/.well-known/acme-challenge/dEniFzswQ-ke4uFjBVBxxqXn92LhEgTTuY0njeUpOow","allNodes":false}]'
     kubernetes.io/ingress.class: traefik
     nginx.ingress.kubernetes.io/whitelist-source-range: 0.0.0.0/0,::/0
   generateName: cm-acme-http-solver-
@@ -21,7 +21,7 @@ metadata:
     uid: 1617c1f3-42bc-41e0-a734-0cd42f7afaa7
 spec:
   rules:
-  - host: cortex-mcp.ry-ops.dev
+  - host: cortex-mcp.cortex-io.dev
     http:
       paths:
       - backend:

@@ -7,8 +7,8 @@ metadata:
     app.kubernetes.io/name: cortex-activator
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: cortex-cortex-fabric
-    cortex.ry-ops.dev/layer-type: activator
-    cortex.ry-ops.dev/fabric: cortex
+    cortex.cortex-io.dev/layer-type: activator
+    cortex.cortex-io.dev/fabric: cortex
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -20,8 +20,8 @@ spec:
       labels:
         app.kubernetes.io/name: cortex-activator
         app.kubernetes.io/instance: {{ .Release.Name }}
-        cortex.ry-ops.dev/layer-type: activator
-        cortex.ry-ops.dev/fabric: cortex
+        cortex.cortex-io.dev/layer-type: activator
+        cortex.cortex-io.dev/fabric: cortex
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.metrics.port }}"
@@ -39,7 +39,7 @@ spec:
             - sh
             - -c
             - |
-              git clone --depth 1 https://github.com/ry-ops/cortex-gitops.git /tmp/repo
+              git clone --depth 1 https://github.com/cortex-io/cortex-gitops.git /tmp/repo
               cp /tmp/repo/apps/cortex-cortex-fabric/src/activator/*.py /code/ 2>/dev/null || echo "No Python files yet"
           volumeMounts:
             - name: code

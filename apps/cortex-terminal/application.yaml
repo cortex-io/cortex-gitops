@@ -5,11 +5,11 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: cortex-terminal
-    cortex.ry-ops.dev/fabric: terminal
+    cortex.cortex-io.dev/fabric: terminal
 spec:
   project: default
   source:
-    repoURL: https://github.com/ry-ops/cortex-gitops.git
+    repoURL: https://github.com/cortex-io/cortex-gitops.git
     targetRevision: HEAD
     path: apps/cortex-terminal
     directory:

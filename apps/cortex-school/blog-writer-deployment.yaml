@@ -60,7 +60,7 @@ spec:
         - name: LOG_LEVEL
           value: "INFO"
         - name: GITHUB_USER_EMAIL
-          value: "cortex@ry-ops.com"
+          value: "cortex@cortex-io.com"
         - name: GITHUB_USER_NAME
           value: "Cortex"
         - name: GITHUB_TOKEN

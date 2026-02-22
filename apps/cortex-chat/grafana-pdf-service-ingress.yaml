@@ -3,13 +3,13 @@ kind: Ingress
 metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod-dns
-    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:grafana-pdf-service","hostname":"cortex-reports.ry-ops.dev","path":"/","allNodes":false}]'
+    field.cattle.io/publicEndpoints: '[{"addresses":["10.88.145.200"],"port":443,"protocol":"HTTPS","serviceName":"cortex-chat:grafana-pdf-service","ingressName":"cortex-chat:grafana-pdf-service","hostname":"cortex-reports.cortex-io.dev","path":"/","allNodes":false}]'
   name: grafana-pdf-service
   namespace: cortex-chat
 spec:
   ingressClassName: traefik
   rules:
-  - host: cortex-reports.ry-ops.dev
+  - host: cortex-reports.cortex-io.dev
     http:
       paths:
       - backend:
@@ -21,5 +21,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - cortex-reports.ry-ops.dev
+    - cortex-reports.cortex-io.dev
     secretName: grafana-pdf-tls
