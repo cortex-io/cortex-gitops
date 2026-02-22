@@ -93,6 +93,10 @@ metadata:
     cortex.ai/substrate: "true"
 data:
   otel-collector-config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
     receivers:
       otlp:
         protocols:
@@ -126,6 +130,7 @@ data:
         loglevel: info
 
     service:
+      extensions: [health_check]
       pipelines:
         traces:
           receivers: [otlp]

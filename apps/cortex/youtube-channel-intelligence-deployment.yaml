@@ -53,7 +53,7 @@ spec:
           value: 'true'
         - name: LOG_LEVEL
           value: info
-        image: 10.43.170.72:5000/youtube-channel-intelligence:latest
+        image: 10.43.170.72:5000/youtube-channel-monitor:latest
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3
