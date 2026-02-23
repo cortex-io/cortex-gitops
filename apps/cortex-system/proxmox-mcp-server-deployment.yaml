@@ -129,7 +129,7 @@ spec:
           GH_TOKEN=$(cat /run/secrets/github-token/token 2>/dev/null || echo "")
           if [ -n "$GH_TOKEN" ]; then
             git clone --single-branch --depth=1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/cortex-io/proxmox-mcp-server.git" /repo
+              "https://x-access-token:${GH_TOKEN}@github.com/ry-ops/proxmox-mcp-server.git" /repo
           else
             echo "No token available, creating empty workspace"
             mkdir -p /repo
