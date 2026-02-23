@@ -32,7 +32,7 @@ spec:
     spec:
       initContainers:
       - name: git-clone
-        image: busybox:latest
+        image: alpine/git:latest
         imagePullPolicy: IfNotPresent
         command:
         - sh
