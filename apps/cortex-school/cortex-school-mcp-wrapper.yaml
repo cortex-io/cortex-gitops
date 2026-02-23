@@ -28,7 +28,6 @@ data:
 
     SCHOOL_COORDINATOR_URL = os.getenv('SCHOOL_COORDINATOR_URL', 'http://school-coordinator.cortex-school.svc.cluster.local:8080')
     RAG_VALIDATOR_URL = os.getenv('RAG_VALIDATOR_URL', 'http://rag-validator.cortex-school.svc.cluster.local:8080')
-    BLOG_WRITER_URL = os.getenv('BLOG_WRITER_URL', 'http://blog-writer.cortex-school.svc.cluster.local:8080')
     TELEMETRY_ENABLED = os.getenv('TELEMETRY_ENABLED', 'true').lower() == 'true'
 
     app = Server("cortex-school-mcp")
@@ -74,20 +73,6 @@ data:
                         "source_references": {"type": "array", "items": {"type": "string"}, "description": "Source document IDs"}
                     },
                     "required": ["content"]
-                }
-            ),
-            Tool(
-                name="generate_blog_post",
-                description="Generate a blog post from learning content",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "topic": {"type": "string", "description": "Blog topic"},
-                        "source_modules": {"type": "array", "items": {"type": "string"}, "description": "Module IDs to reference"},
-                        "style": {"type": "string", "enum": ["technical", "casual", "tutorial"], "default": "technical"},
-                        "length": {"type": "string", "enum": ["short", "medium", "long"], "default": "medium"}
-                    },
-                    "required": ["topic"]
                 }
             ),
             Tool(
@@ -140,8 +125,6 @@ data:
                     base_url = SCHOOL_COORDINATOR_URL
                 elif name == "validate_rag_content":
                     base_url = RAG_VALIDATOR_URL
-                elif name == "generate_blog_post":
-                    base_url = BLOG_WRITER_URL
                 elif name == "search_knowledge_base":
                     base_url = SCHOOL_COORDINATOR_URL
                 else:
@@ -152,7 +135,6 @@ data:
                     "create_learning_module": "/api/modules",
                     "generate_quiz": "/api/quizzes/generate",
                     "validate_rag_content": "/api/validate",
-                    "generate_blog_post": "/api/blog/generate",
                     "list_learning_modules": "/api/modules",
                     "get_learning_progress": "/api/progress",
                     "search_knowledge_base": "/api/search"
@@ -279,8 +261,6 @@ spec:
           value: "http://school-coordinator.cortex-school.svc.cluster.local:8080"
         - name: RAG_VALIDATOR_URL
           value: "http://rag-validator.cortex-school.svc.cluster.local:8080"
-        - name: BLOG_WRITER_URL
-          value: "http://blog-writer.cortex-school.svc.cluster.local:8080"
         - name: TELEMETRY_ENABLED
           value: "true"
         - name: PORT
