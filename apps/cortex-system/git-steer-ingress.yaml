@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: git-steer-ingress
+  namespace: cortex-system
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-dns
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: 'true'
+  labels:
+    app: git-steer
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: git-steer.cortex-io.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: git-steer
+            port:
+              number: 3000
+  tls:
+  - hosts:
+    - git-steer.cortex-io.dev
+    secretName: git-steer-tls
