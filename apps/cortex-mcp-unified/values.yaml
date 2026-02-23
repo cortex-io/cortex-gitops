@@ -100,6 +100,7 @@ config:
   sandflyMcpUrl: "http://sandfly-mcp-server.cortex-system:8080"
   unifiMcpUrl: "http://unifi-mcp-server.cortex-system:3000"
   cortexMcpUrl: "http://cortex-mcp-server.cortex-system:3000"
+  gitSteerUrl: "http://git-steer.cortex-system:3000"
 
   # Logging
   logLevel: "20"  # INFO
