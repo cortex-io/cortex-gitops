@@ -216,8 +216,6 @@ spec:
 
           mkdir -p /app/src/clients
 
-          mkdir -p /app/src/worker-pool
-
           mkdir -p /app/src/masters
 
           mkdir -p /app/src/tools
@@ -271,15 +269,6 @@ spec:
           cp /source/status.js /app/src/tools/
 
 
-          # Copy worker-pool files
-
-          echo "Copying worker-pool files..."
-
-          cp /source/coordinator.js /app/src/worker-pool/
-
-          cp /source/monitor.js /app/src/worker-pool/
-
-          cp /source/spawner.js /app/src/worker-pool/
 
 
           # List what we have

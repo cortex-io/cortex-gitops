@@ -38,7 +38,7 @@ spec:
   template:
     metadata:
       annotations:
-        kubectl.kubernetes.io/restartedAt: '2026-02-22T14:10:00-06:00'
+        kubectl.kubernetes.io/restartedAt: '2026-02-23T01:45:00-06:00'
       labels:
         app: telemetry-collector
     spec:
@@ -67,17 +67,25 @@ spec:
             memory: "256Mi"
             cpu: "500m"
         livenessProbe:
-          httpGet:
-            path: /
-            port: 13133
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - wget -qO- http://localhost:13133/ || exit 1
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
-          httpGet:
-            path: /
-            port: 13133
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - wget -qO- http://localhost:13133/ || exit 1
           initialDelaySeconds: 10
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
       volumes:
       - name: config
         configMap:
