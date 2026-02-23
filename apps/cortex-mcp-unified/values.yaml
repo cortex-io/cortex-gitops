@@ -85,8 +85,8 @@ config:
   # Chat Activator (Chat Layer Fabric)
   chatActivatorUrl: "http://chat-activator.cortex-chat:8080"
 
-  # Qdrant (conversation memory)
-  qdrantUrl: "http://chat-qdrant.cortex-chat:6333"
+  # Qdrant (conversation memory) - shared instance in cortex-system
+  qdrantUrl: "http://qdrant.cortex-system:6333"
 
   # Prometheus (cluster metrics)
   prometheusUrl: "http://prometheus-server.cortex-system:80"
