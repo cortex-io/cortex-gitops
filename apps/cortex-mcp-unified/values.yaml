@@ -99,7 +99,6 @@ config:
   proxmoxMcpUrl: "http://proxmox-mcp-server.cortex-system:3000"
   sandflyMcpUrl: "http://sandfly-mcp-server.cortex-system:8080"
   unifiMcpUrl: "http://unifi-mcp-server.cortex-system:3000"
-  n8nMcpUrl: "http://n8n-mcp-server.cortex-system:3002"
   cortexMcpUrl: "http://cortex-mcp-server.cortex-system:3000"
 
   # Logging
