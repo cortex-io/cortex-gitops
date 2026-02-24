@@ -94,10 +94,7 @@ config:
   # Redis (agent framework)
   redisUrl: "redis://redis.cortex-system:6379"
 
-  # MCP servers (passthrough)
-  proxmoxMcpUrl: "http://proxmox-mcp-server.cortex-system:3000"
-  unifiMcpUrl: "http://unifi-mcp-server.cortex-system:3000"
-  cortexMcpUrl: "http://cortex-mcp-server.cortex-system:3000"
+  # git-steer (TypeScript MCP server)
   gitSteerUrl: "http://git-steer.cortex-system:3000"
 
   # Logging
