@@ -48,29 +48,24 @@ spec:
       containers:
         # Main terminal container
         - name: terminal
-          image: ghcr.io/ry-ops/cortex-terminal:fe1f866
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/git-fabric/terminal:latest
+          imagePullPolicy: Always
           env:
-            - name: ENABLE_SSH
-              value: "false"  # Use kubectl exec or Tailscale SSH
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: cortex-chat-secrets
                   key: anthropic-api-key
-            # Kubernetes context for Claude Code
-            - name: KUBECONFIG
-              value: /var/run/secrets/kubernetes.io/serviceaccount/token
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "50m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "1Gi"
+              cpu: "1000m"
           volumeMounts:
             - name: home-data
-              mountPath: /home/cortex
+              mountPath: /home/fabric
             - name: tmp
               mountPath: /tmp
           securityContext:
