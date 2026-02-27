@@ -82,6 +82,8 @@ spec:
                   key: token
             - name: GITHUB_STATE_REPO
               value: {{ .Values.githubStateRepo | quote }}
+            - name: STATE_REPO
+              value: {{ .Values.githubStateRepo | quote }}
             # qdrant
             - name: QDRANT_URL
               value: {{ .Values.qdrantUrl | quote }}
@@ -141,17 +143,17 @@ spec:
                   key: unifi-api-key
                   optional: true
             # sandfly
-            - name: SANDFLY_URL
+            - name: SANDFLY_HOST
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
-                  key: sandfly-url
+                  key: sandfly-host
                   optional: true
-            - name: SANDFLY_USER
+            - name: SANDFLY_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
-                  key: sandfly-user
+                  key: sandfly-username
                   optional: true
             - name: SANDFLY_PASSWORD
               valueFrom:

@@ -24,8 +24,8 @@ imagePullSecret: ghcr-pull-secret
 #     --from-literal=proxmox-token-name=... \
 #     --from-literal=proxmox-token-value=... \
 #     --from-literal=unifi-api-key=... \
-#     --from-literal=sandfly-url=... \
-#     --from-literal=sandfly-user=... \
+#     --from-literal=sandfly-host=... \
+#     --from-literal=sandfly-username=... \
 #     --from-literal=sandfly-password=...
 secretName: fabric-gateway-secrets
 
