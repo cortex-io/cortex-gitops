@@ -65,7 +65,7 @@ spec:
               cpu: "1000m"
           volumeMounts:
             - name: home-data
-              mountPath: /home/fabric
+              mountPath: /home/node
             - name: tmp
               mountPath: /tmp
           securityContext:

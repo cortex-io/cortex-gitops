@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fabric-gateway
+description: "@git-fabric/gateway — MoE router and orchestrator for all fabric apps"
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
