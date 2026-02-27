@@ -1,0 +1,89 @@
+---
+# Secret — create this manually in cortex-system before first deploy:
+#
+#   kubectl create secret generic fabric-chat-secrets \
+#     --namespace cortex-system \
+#     --from-literal=anthropic-api-key=sk-ant-... \
+#     --from-literal=github-token=ghp_... \
+#     --from-literal=qdrant-api-key=""
+#
+# QDRANT_API_KEY can be empty for in-cluster no-auth Qdrant.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabric-chat
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-chat
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fabric-chat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fabric-chat
+        app.kubernetes.io/part-of: git-fabric
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: fabric-chat
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: anthropic-api-key
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: github-token
+            - name: QDRANT_URL
+              value: {{ .Values.qdrantUrl | quote }}
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: qdrant-api-key
+                  optional: true
+            - name: GITHUB_STATE_REPO
+              value: {{ .Values.githubStateRepo | quote }}
+            - name: NODE_ENV
+              value: production
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "process.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-chat
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-chat
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fabric-chat
+  ports:
+    - name: mcp
+      port: 3000
+      targetPort: 3000

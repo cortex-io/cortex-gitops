@@ -1,0 +1,20 @@
+image:
+  repository: ghcr.io/git-fabric/k8s
+  tag: latest
+  pullPolicy: Always
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Reads service account token automatically when inCluster=true
+inCluster: true
+
+# Secret containing the GHCR pull credential
+imagePullSecret: ghcr-pull-secret

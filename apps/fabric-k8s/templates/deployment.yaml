@@ -1,0 +1,129 @@
+---
+# ServiceAccount — pod identity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fabric-k8s
+  namespace: cortex-system
+
+---
+# ClusterRole — read access to all resources the fabric app queries
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fabric-k8s
+rules:
+  # Core resources
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - namespaces
+      - pods
+      - pods/log
+      - services
+      - events
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch"]
+  # Apps
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  # Batch
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # Traefik IngressRoutes
+  - apiGroups: ["traefik.io"]
+    resources: ["ingressroutes", "ingressroutetcps", "middlewares"]
+    verbs: ["get", "list", "watch"]
+  # ArgoCD Applications
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "applicationsets"]
+    verbs: ["get", "list", "watch"]
+  # KEDA ScaledObjects
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects", "scaledjobs"]
+    verbs: ["get", "list", "watch"]
+  # Longhorn Volumes
+  - apiGroups: ["longhorn.io"]
+    resources: ["volumes", "replicas", "engines"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fabric-k8s
+subjects:
+  - kind: ServiceAccount
+    name: fabric-k8s
+    namespace: cortex-system
+roleRef:
+  kind: ClusterRole
+  name: fabric-k8s
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabric-k8s
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-k8s
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fabric-k8s
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fabric-k8s
+        app.kubernetes.io/part-of: git-fabric
+    spec:
+      serviceAccountName: fabric-k8s
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: fabric-k8s
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: K8S_IN_CLUSTER
+              value: "{{ .Values.inCluster }}"
+            - name: NODE_ENV
+              value: production
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          # MCP server runs on stdio — no HTTP port needed
+          # Liveness: verify the process is alive
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "process.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+# ClusterIP service — MCP consumers connect via kubectl port-forward or internal routing
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-k8s
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-k8s
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fabric-k8s
+  ports:
+    - name: mcp
+      port: 3000
+      targetPort: 3000

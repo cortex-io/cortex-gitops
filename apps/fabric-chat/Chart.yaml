@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fabric-chat
+description: "@git-fabric/chat — AI conversation sessions with semantic search"
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
