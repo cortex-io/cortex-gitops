@@ -75,7 +75,7 @@ spec:
 
         # Tailscale sidecar for secure remote access
         - name: tailscale
-          image: tailscale/tailscale:stable
+          image: tailscale/tailscale:v1.80.3
           imagePullPolicy: IfNotPresent
           env:
             - name: TS_AUTHKEY
