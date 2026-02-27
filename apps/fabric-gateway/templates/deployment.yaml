@@ -1,0 +1,199 @@
+---
+# gateway.yaml ConfigMap — controls which fabric apps are loaded
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fabric-gateway-config
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-gateway
+    app.kubernetes.io/part-of: git-fabric
+data:
+  gateway.yaml: |
+    apps:
+      - name: "@git-fabric/k8s"
+        enabled: true
+      - name: "@git-fabric/chat"
+        enabled: true
+      - name: "@git-fabric/git"
+        enabled: true
+      - name: "@git-fabric/cve"
+        enabled: true
+      - name: "@git-fabric/cloudflare"
+        enabled: true
+      - name: "@git-fabric/tailscale"
+        enabled: true
+      - name: "@git-fabric/proxmox"
+        enabled: true
+      - name: "@git-fabric/unifi"
+        enabled: true
+      - name: "@git-fabric/sandfly"
+        enabled: true
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabric-gateway
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-gateway
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fabric-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fabric-gateway
+        app.kubernetes.io/part-of: git-fabric
+    spec:
+      serviceAccountName: fabric-k8s   # reuse fabric-k8s ClusterRole for k8s tools
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: fabric-gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: MCP_HTTP_PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: production
+            # k8s — in-cluster service account
+            - name: K8S_IN_CLUSTER
+              value: "true"
+            # chat + cve + git
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.anthropic }}
+                  key: anthropic-api-key
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.githubToken }}
+                  key: token
+            - name: GITHUB_STATE_REPO
+              value: {{ .Values.githubStateRepo | quote }}
+            # qdrant
+            - name: QDRANT_URL
+              value: {{ .Values.qdrantUrl | quote }}
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.qdrant }}
+                  key: qdrant-api-key
+                  optional: true
+            # cloudflare
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.cloudflare }}
+                  key: api-token
+            # tailscale
+            - name: TAILSCALE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.tailscale }}
+                  key: api-key
+            - name: TAILSCALE_TAILNET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecrets.tailscale }}
+                  key: tailnet
+            # proxmox
+            - name: PROXMOX_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: proxmox-host
+                  optional: true
+            - name: PROXMOX_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: proxmox-user
+                  optional: true
+            - name: PROXMOX_TOKEN_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: proxmox-token-name
+                  optional: true
+            - name: PROXMOX_TOKEN_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: proxmox-token-value
+                  optional: true
+            # unifi
+            - name: UNIFI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: unifi-api-key
+                  optional: true
+            # sandfly
+            - name: SANDFLY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: sandfly-url
+                  optional: true
+            - name: SANDFLY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: sandfly-user
+                  optional: true
+            - name: SANDFLY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: sandfly-password
+                  optional: true
+          volumeMounts:
+            - name: gateway-config
+              mountPath: /app/gateway.yaml
+              subPath: gateway.yaml
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          ports:
+            - name: mcp
+              containerPort: 3000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: gateway-config
+          configMap:
+            name: fabric-gateway-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-gateway
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-gateway
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fabric-gateway
+  ports:
+    - name: mcp
+      port: 3000
+      targetPort: 3000
