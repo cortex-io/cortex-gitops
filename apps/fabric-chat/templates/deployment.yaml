@@ -62,13 +62,18 @@ spec:
               value: {{ .Values.githubStateRepo | quote }}
             - name: NODE_ENV
               value: production
-          command: ["/bin/sh", "-c", "tail -f /dev/null | node bin/cli.js start --stdio"]
+            - name: MCP_HTTP_PORT
+              value: "3000"
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          ports:
+            - name: mcp
+              containerPort: 3000
           livenessProbe:
-            exec:
-              command: ["/bin/sh", "-c", "kill -0 $(pgrep -f 'node bin/cli.js') 2>/dev/null"]
-            initialDelaySeconds: 15
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
             periodSeconds: 30
             failureThreshold: 3
 
