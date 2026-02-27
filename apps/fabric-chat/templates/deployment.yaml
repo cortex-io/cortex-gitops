@@ -62,13 +62,15 @@ spec:
               value: {{ .Values.githubStateRepo | quote }}
             - name: NODE_ENV
               value: production
+          command: ["/bin/sh", "-c", "tail -f /dev/null | node bin/cli.js start --stdio"]
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           livenessProbe:
             exec:
-              command: ["node", "-e", "process.exit(0)"]
-            initialDelaySeconds: 10
+              command: ["/bin/sh", "-c", "kill -0 $(pgrep -f 'node bin/cli.js') 2>/dev/null"]
+            initialDelaySeconds: 15
             periodSeconds: 30
+            failureThreshold: 3
 
 ---
 apiVersion: v1

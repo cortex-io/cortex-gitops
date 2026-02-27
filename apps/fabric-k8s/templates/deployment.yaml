@@ -102,12 +102,14 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           # MCP server runs on stdio — no HTTP port needed
-          # Liveness: verify the process is alive
+          command: ["/bin/sh", "-c", "tail -f /dev/null | node bin/cli.js start --stdio"]
+          # Liveness: verify the node process is running
           livenessProbe:
             exec:
-              command: ["node", "-e", "process.exit(0)"]
-            initialDelaySeconds: 10
+              command: ["/bin/sh", "-c", "kill -0 $(pgrep -f 'node bin/cli.js') 2>/dev/null"]
+            initialDelaySeconds: 15
             periodSeconds: 30
+            failureThreshold: 3
 
 ---
 # ClusterIP service — MCP consumers connect via kubectl port-forward or internal routing
