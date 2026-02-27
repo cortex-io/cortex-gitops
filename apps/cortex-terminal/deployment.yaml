@@ -159,6 +159,34 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
+# Role for Tailscale sidecar to manage its state secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cortex-terminal-tailscale
+  namespace: cortex-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["tailscale"]
+    verbs: ["get", "update", "patch", "create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cortex-terminal-tailscale
+  namespace: cortex-system
+subjects:
+  - kind: ServiceAccount
+    name: cortex-terminal
+    namespace: cortex-system
+roleRef:
+  kind: Role
+  name: cortex-terminal-tailscale
+  apiGroup: rbac.authorization.k8s.io
+
+---
 # Persistent storage for home directory
 apiVersion: v1
 kind: PersistentVolumeClaim
