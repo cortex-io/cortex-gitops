@@ -104,6 +104,7 @@ config:
   sandflyMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
   unifiMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
   n8nMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+  cortexMcpUrl: "http://cortex-unified-mcp.cortex-system.svc.cluster.local:3000"
 
   # Logging
   logLevel: "20"  # INFO
