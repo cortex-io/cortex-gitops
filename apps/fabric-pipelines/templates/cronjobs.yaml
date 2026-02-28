@@ -42,6 +42,16 @@ spec:
                   value: {{ $root.Values.gatewayUrl | quote }}
                 - name: NODE_ENV
                   value: production
+                - name: ANTHROPIC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $root.Values.existingSecrets.anthropic }}
+                      key: anthropic-api-key
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $root.Values.existingSecrets.githubToken }}
+                      key: token
                 {{- range $extraEnv }}
                 - name: {{ .name }}
                   value: {{ .value | quote }}
