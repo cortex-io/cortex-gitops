@@ -153,9 +153,9 @@ spec:
               # We just need to run dbmigrate with the correct connstr.
               echo "Running dbmigrate..."
               export PGPASSWORD=$POSTGRES_SANDFLY_PASSWORD
+              export POSTGRES_CONNECTION_STRING="$POSTGRES_CONNECTION_STRING"
               cd $SANDFLY_DIR/utils
-              CONFIG_JSON="{\"server\":{\"db\":{\"postgres\":{\"connstr\":\"$POSTGRES_CONNECTION_STRING\"}}}}" \
-                ./dbmigrate
+              ./dbmigrate
               echo "dbmigrate complete."
 
               # ── Step E: Create Sandfly application users ─────────────────
@@ -170,94 +170,15 @@ spec:
               echo "$ADMIN_PASSWORD" > $SHARED/admin.password.txt
 
               # ── Step F: Assemble config JSON files ───────────────────────
-              # Templates are NOT bundled in the image's setup_data dir —
-              # write them ourselves from the known upstream template content.
+              # Templates are NOT bundled in the image's setup_data dir.
+              # Store as base64 constants and decode at runtime to avoid
+              # YAML/heredoc parsing issues with curly braces.
               echo "Writing config templates..."
               mkdir -p $SETUP_DATA_DIR/templates
-              cat > $SETUP_DATA_DIR/templates/config.server.template.json << 'TMPL'
-{
-	"config_version": 4,
-	"server": {
-		"keys": {
-			"server": {
-				"public_key": "server_keys_server_public_key_b64",
-				"private_key": "server_keys_server_private_key_b64"
-			},
-			"node": {
-				"public_key": "server_keys_node_public_key_b64"
-			},
-			"jwt": "server_keys_jwt"
-		},
-		"ssl": {
-			"server": {
-				"cacert": "server_ssl_server_cacert_b64",
-				"cert": "server_ssl_server_cert_b64",
-				"cert_signed": "server_ssl_server_cert_signed_b64",
-				"private_key": "server_ssl_server_key_b64",
-				"private_key_signed": "server_ssl_server_key_signed_b64"
-			}
-		},
-		"api": {
-			"hostname": "api_hostname",
-			"password": "api_password"
-		},
-		"db": {
-			"postgres": {
-				"connstr": "db_postgres_connstr",
-				"pool_size": 20,
-				"pool_size_nodes": 30,
-				"result_workers": 20,
-				"postgres_password": "db_postgres_postgres_password",
-				"sandfly_password": "db_postgres_sandfly_password"
-			}
-		},
-		"options": {
-			"log_level": "info",
-			"disable_strict_tls_policy": false,
-			"ui_session_timeout_minutes": 60,
-			"ui_session_expiration_minutes": 1440,
-			"disable_nightly_maintenance": false
-		}
-	}
-}
-TMPL
-              cat > $SETUP_DATA_DIR/templates/config.node.template.json << 'TMPL'
-{
-	"node": {
-		"keys": {
-			"server": {
-				"public_key": "node_keys_server_public_key_b64"
-			},
-			"node": {
-				"private_key": "node_keys_node_private_key_b64"
-			}
-		},
-		"ssl": {
-			"server": {
-				"cacert": "node_ssl_server_cacert_b64"
-			},
-			"node": {
-				"cert": "node_ssl_node_cert_b64",
-				"private_key": "node_ssl_node_key_b64"
-			}
-		},
-		"api": {
-			"hostname": "api_hostname",
-			"password": "api_password"
-		},
-		"options": {
-			"ignore_ssl_certs": true,
-			"simulator_multiplier": 0,
-			"remove_dir_when_done": true,
-			"default_directory": "",
-			"fallback_directory": "/dev/shm",
-			"concurrency": 500,
-			"log_level": "info",
-			"queue_name": "main"
-		}
-	}
-}
-TMPL
+              echo ewoJImNvbmZpZ192ZXJzaW9uIjogNCwKCSJzZXJ2ZXIiOiB7CgkJImtleXMiOiB7CgkJCSJzZXJ2ZXIiOiB7CgkJCQkicHVibGljX2tleSI6ICJzZXJ2ZXJfa2V5c19zZXJ2ZXJfcHVibGljX2tleV9iNjQiLAoJCQkJInByaXZhdGVfa2V5IjogInNlcnZlcl9rZXlzX3NlcnZlcl9wcml2YXRlX2tleV9iNjQiCgkJCX0sCgkJCSJub2RlIjogewoJCQkJInB1YmxpY19rZXkiOiAic2VydmVyX2tleXNfbm9kZV9wdWJsaWNfa2V5X2I2NCIKCQkJfSwKCQkJImp3dCI6ICJzZXJ2ZXJfa2V5c19qd3QiCgkJfSwKCQkic3NsIjogewoJCQkic2VydmVyIjogewoJCQkJImNhY2VydCI6ICJzZXJ2ZXJfc3NsX3NlcnZlcl9jYWNlcnRfYjY0IiwKCQkJCSJjZXJ0IjogInNlcnZlcl9zc2xfc2VydmVyX2NlcnRfYjY0IiwKCQkJCSJjZXJ0X3NpZ25lZCI6ICJzZXJ2ZXJfc3NsX3NlcnZlcl9jZXJ0X3NpZ25lZF9iNjQiLAoJCQkJInByaXZhdGVfa2V5IjogInNlcnZlcl9zc2xfc2VydmVyX2tleV9iNjQiLAoJCQkJInByaXZhdGVfa2V5X3NpZ25lZCI6ICJzZXJ2ZXJfc3NsX3NlcnZlcl9rZXlfc2lnbmVkX2I2NCIKCQkJfQoJCX0sCgkJImFwaSI6IHsKCQkJImhvc3RuYW1lIjogImFwaV9ob3N0bmFtZSIsCgkJCSJwYXNzd29yZCI6ICJhcGlfcGFzc3dvcmQiCgkJfSwKCQkiZGIiOiB7CgkJCSJwb3N0Z3JlcyI6IHsKCQkJCSJjb25uc3RyIjogImRiX3Bvc3RncmVzX2Nvbm5zdHIiLAoJCQkJInBvb2xfc2l6ZSI6IDIwLAoJCQkJInBvb2xfc2l6ZV9ub2RlcyI6IDMwLAoJCQkJInJlc3VsdF93b3JrZXJzIjogMjAsCgkJCQkicG9zdGdyZXNfcGFzc3dvcmQiOiAiZGJfcG9zdGdyZXNfcG9zdGdyZXNfcGFzc3dvcmQiLAoJCQkJInNhbmRmbHlfcGFzc3dvcmQiOiAiZGJfcG9zdGdyZXNfc2FuZGZseV9wYXNzd29yZCIKCQkJfQoJCX0sCgkJIm9wdGlvbnMiOiB7CgkJCSJsb2dfbGV2ZWwiOiAiaW5mbyIsCgkJCSJkaXNhYmxlX3N0cmljdF90bHNfcG9saWN5IjogZmFsc2UsCgkJCSJ1aV9zZXNzaW9uX3RpbWVvdXRfbWludXRlcyI6IDYwLAoJCQkidWlfc2Vzc2lvbl9leHBpcmF0aW9uX21pbnV0ZXMiOiAxNDQwLAoJCQkiZGlzYWJsZV9uaWdodGx5X21haW50ZW5hbmNlIjogZmFsc2UKCQl9Cgl9Cn0= \
+                | base64 -d > $SETUP_DATA_DIR/templates/config.server.template.json
+              echo ewoJIm5vZGUiOiB7CgkJImtleXMiOiB7CgkJCSJzZXJ2ZXIiOiB7CgkJCQkicHVibGljX2tleSI6ICJub2RlX2tleXNfc2VydmVyX3B1YmxpY19rZXlfYjY0IgoJCQl9LAoJCQkibm9kZSI6IHsKCQkJCSJwcml2YXRlX2tleSI6ICJub2RlX2tleXNfbm9kZV9wcml2YXRlX2tleV9iNjQiCgkJCX0KCQl9LAoJCSJzc2wiOiB7CgkJCSJzZXJ2ZXIiOiB7CgkJCQkiY2FjZXJ0IjogIm5vZGVfc3NsX3NlcnZlcl9jYWNlcnRfYjY0IgoJCQl9LAoJCQkibm9kZSI6IHsKCQkJCSJjZXJ0IjogIm5vZGVfc3NsX25vZGVfY2VydF9iNjQiLAoJCQkJInByaXZhdGVfa2V5IjogIm5vZGVfc3NsX25vZGVfa2V5X2I2NCIKCQkJfQoJCX0sCgkJImFwaSI6IHsKCQkJImhvc3RuYW1lIjogImFwaV9ob3N0bmFtZSIsCgkJCSJwYXNzd29yZCI6ICJhcGlfcGFzc3dvcmQiCgkJfSwKCQkib3B0aW9ucyI6IHsKCQkJImlnbm9yZV9zc2xfY2VydHMiOiB0cnVlLAoJCQkic2ltdWxhdG9yX211bHRpcGxpZXIiOiAwLAoJCQkicmVtb3ZlX2Rpcl93aGVuX2RvbmUiOiB0cnVlLAoJCQkiZGVmYXVsdF9kaXJlY3RvcnkiOiAiIiwKCQkJImZhbGxiYWNrX2RpcmVjdG9yeSI6ICIvZGV2L3NobSIsCgkJCSJjb25jdXJyZW5jeSI6IDUwMCwKCQkJImxvZ19sZXZlbCI6ICJpbmZvIiwKCQkJInF1ZXVlX25hbWUiOiAibWFpbiIKCQl9Cgl9Cn0= \
+                | base64 -d > $SETUP_DATA_DIR/templates/config.node.template.json
               echo "Templates written."
 
               echo "Assembling config JSON files..."
@@ -270,7 +191,6 @@ TMPL
               cp $SETUP_DATA_DIR/config.node.json   $SHARED/config.node.json
 
               echo "=== Setup complete ==="
-              echo "Server config: $(python3 -c "import json; d=json.load(open('$SHARED/config.server.json')); print('hostname=', d['server']['api']['hostname'])")"
           env:
             - name: POSTGRES_SANDFLY_PASSWORD_FROM_SECRET
               valueFrom:
