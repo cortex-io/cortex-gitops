@@ -148,15 +148,6 @@ fabrics:
       - status
       - help
       - system
-  n8n:
-    stream: "cortex.n8n.tasks"
-    capabilities:
-      - n8n
-      - workflow
-      - automation
-      - automate
-      - execute
-      - trigger
   school:
     stream: "cortex.school.tasks"
     capabilities:
@@ -203,8 +194,6 @@ mcpServers:
     url: "http://cortex-school-mcp.cortex-school.svc.cluster.local:3000"
   - name: tailscale-mcp
     url: "http://tailscale-mcp-server.cortex-system.svc.cluster.local:3000"
-  - name: n8n-mcp
-    url: "http://n8n-mcp-server.cortex-system.svc.cluster.local:3002"
 
 # -----------------------------------------------------------------------------
 # Metrics

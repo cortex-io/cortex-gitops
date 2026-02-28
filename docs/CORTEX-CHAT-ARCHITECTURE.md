@@ -55,7 +55,7 @@ Cortex Chat is NOT a simple chatbot - it's a gateway into the Cortex Mixture of 
 │  - general: General conversation and task routing               │
 │  - infrastructure: Kubernetes, deployment, infra management     │
 │  - security: Vulnerability analysis, compliance                 │
-│  - automation: Workflow automation, n8n, langflow               │
+│  - automation: Workflow automation, langflow               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -125,7 +125,7 @@ experts:
   - name: automation
     endpoint: http://cortex-orchestrator.cortex.svc.cluster.local:8000
     weight: 1.5
-    specialization: "workflow automation, n8n, langflow"
+    specialization: "workflow automation, langflow"
 ```
 
 **Dependencies**:

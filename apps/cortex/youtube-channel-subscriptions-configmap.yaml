@@ -31,16 +31,6 @@ data:
           "tags": ["unifi", "networking", "mcp-server"]
         },
         {
-          "name": "n8n",
-          "url": "https://www.youtube.com/@n8n-io",
-          "channel_id": "@n8n-io",
-          "priority": "medium",
-          "category": "automation",
-          "description": "n8n workflow automation and security updates",
-          "poll_frequency": "daily",
-          "tags": ["n8n", "automation", "workflows", "security"]
-        },
-        {
           "name": "Sandfly Security",
           "url": "https://www.youtube.com/@SandflySecurity",
           "channel_id": "@SandflySecurity",

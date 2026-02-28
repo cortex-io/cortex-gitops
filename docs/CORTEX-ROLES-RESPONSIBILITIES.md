@@ -391,31 +391,6 @@
 
 ---
 
-### n8n-mcp-server
-**Namespace**: `cortex-system`
-**Type**: ClusterIP Service
-**Port**: `3002`
-
-**Role**: Workflow Automation
-**Responsibilities**:
-- Trigger n8n workflows
-- Monitor workflow execution
-- Manage workflow templates
-- Handle webhook integrations
-
-**Tools Provided**:
-- `n8n_trigger_workflow` - Execute workflow
-- `n8n_list_workflows` - List workflows
-- `n8n_get_execution` - Execution status
-
-**Dependencies**:
-- n8n API
-
-**Consumers**:
-- cortex-mcp-server
-- Automation workflows
-
----
 
 ### cloudflare-mcp-server
 **Namespace**: `cortex-system`

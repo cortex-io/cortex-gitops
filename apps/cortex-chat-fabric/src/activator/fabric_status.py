@@ -109,7 +109,7 @@ class FabricStatusReporter:
 
         # Get all deployments from relevant namespaces
         all_deployments = []
-        for ns in ["cortex-system", "cortex-chat", "cortex-unifi", "cortex-school", "cortex-n8n"]:
+        for ns in ["cortex-system", "cortex-chat", "cortex-unifi", "cortex-school"]:
             deps = await self.get_deployments(namespace=ns)
             all_deployments.extend(deps)
 
@@ -274,7 +274,6 @@ How can I help you today? I can assist with:
 • **Network**: UniFi devices, WiFi, clients
 • **Infrastructure**: Proxmox VMs, Kubernetes pods
 • **Security**: Sandfly scans, vulnerability analysis
-• **Automation**: n8n workflows, triggers
 • **Learning**: School modules, quizzes, content
 • **VPN**: Tailscale devices, ACLs, DNS"""
 
@@ -290,7 +289,6 @@ How can I assist you today? I can help with:
 • Network operations (UniFi)
 • Infrastructure management (Proxmox, Kubernetes)
 • Security analysis (Sandfly)
-• Workflow automation (n8n)
 • Learning content (School)
 • VPN management (Tailscale)"""
 

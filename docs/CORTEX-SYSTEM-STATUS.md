@@ -129,9 +129,7 @@ All ServiceAccounts, ClusterRoles, and ClusterRoleBindings created successfully:
 | checkmk-mcp-server | cortex-system | ✅ Running | Internal |
 | github-mcp-server | cortex-system | ✅ Running | Internal |
 | youtube-mcp-server | cortex-system | ✅ Running | Internal |
-| n8n-mcp-server | cortex-system | ✅ Running | Internal |
 | langflow-mcp-server | cortex-system | ✅ Running | Internal |
-| netbox-mcp-server | cortex-system | ✅ Running | Internal |
 
 ### Failed (2/11)
 

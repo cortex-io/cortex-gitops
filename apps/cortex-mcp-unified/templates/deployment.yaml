@@ -57,8 +57,6 @@ spec:
               value: {{ .Values.config.sandflyMcpUrl | quote }}
             - name: UNIFI_MCP_URL
               value: {{ .Values.config.unifiMcpUrl | quote }}
-            - name: N8N_MCP_URL
-              value: {{ .Values.config.n8nMcpUrl | quote }}
             - name: CORTEX_MCP_URL
               value: {{ .Values.config.cortexMcpUrl | quote }}
             # Logging
