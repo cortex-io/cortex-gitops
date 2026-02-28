@@ -1,0 +1,5 @@
+apiVersion: v2
+name: tailscale
+description: Tailscale subnet router for k3s cluster ingress
+type: application
+version: 0.1.0
