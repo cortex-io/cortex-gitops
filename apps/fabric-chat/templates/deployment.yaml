@@ -60,6 +60,8 @@ spec:
                   optional: true
             - name: GITHUB_STATE_REPO
               value: {{ .Values.githubStateRepo | quote }}
+            - name: FABRIC_GATEWAY_URL
+              value: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
             - name: NODE_ENV
               value: production
             - name: MCP_HTTP_PORT
