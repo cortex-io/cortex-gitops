@@ -97,6 +97,14 @@ config:
   # git-steer (TypeScript MCP server)
   gitSteerUrl: "http://git-steer.cortex-system:3000"
 
+  # fabric-gateway — single MCP endpoint for all fabric apps
+  # (kubernetes, proxmox, unifi, sandfly, cloudflare, tailscale, cve, git, chat)
+  kubernetesMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+  proxmoxMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+  sandflyMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+  unifiMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+  n8nMcpUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+
   # Logging
   logLevel: "20"  # INFO
 
