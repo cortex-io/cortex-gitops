@@ -1,0 +1,109 @@
+{{- define "fabric-pipelines.cronjob" -}}
+{{- $name := .name -}}
+{{- $pipeline := .pipeline -}}
+{{- $schedule := .schedule -}}
+{{- $resources := .resources -}}
+{{- $root := .root -}}
+{{- $extraEnv := .extraEnv | default list -}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fabric-pipeline-{{ $name }}
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: fabric-pipeline-{{ $name }}
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  schedule: {{ $schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: fabric-pipeline-{{ $name }}
+            app.kubernetes.io/part-of: git-fabric
+        spec:
+          serviceAccountName: fabric-k8s
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: {{ $root.Values.imagePullSecret }}
+          containers:
+            - name: pipeline
+              image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+              imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+              env:
+                - name: PIPELINE_NAME
+                  value: {{ $pipeline | quote }}
+                - name: FABRIC_GATEWAY_URL
+                  value: {{ $root.Values.gatewayUrl | quote }}
+                - name: NODE_ENV
+                  value: production
+                {{- range $extraEnv }}
+                - name: {{ .name }}
+                  value: {{ .value | quote }}
+                {{- end }}
+              envFrom:
+                - secretRef:
+                    name: {{ $root.Values.secretName }}
+              resources:
+                {{- toYaml $resources | nindent 16 }}
+{{- end }}
+
+{{- if .Values.pipelines.securityTriage.enabled }}
+{{ include "fabric-pipelines.cronjob" (dict
+    "name" "security-triage"
+    "pipeline" "1-security-triage"
+    "schedule" .Values.pipelines.securityTriage.schedule
+    "resources" .Values.resources
+    "root" .
+    "extraEnv" (list)
+) }}
+{{- end }}
+
+{{- if .Values.pipelines.gitopsObserver.enabled }}
+{{ include "fabric-pipelines.cronjob" (dict
+    "name" "gitops-observer"
+    "pipeline" "2-gitops-observer"
+    "schedule" .Values.pipelines.gitopsObserver.schedule
+    "resources" .Values.resources
+    "root" .
+    "extraEnv" (list)
+) }}
+{{- end }}
+
+{{- if .Values.pipelines.networkAudit.enabled }}
+{{ include "fabric-pipelines.cronjob" (dict
+    "name" "network-audit"
+    "pipeline" "3-network-audit"
+    "schedule" .Values.pipelines.networkAudit.schedule
+    "resources" .Values.resources
+    "root" .
+    "extraEnv" (list (dict "name" "CF_ZONE_ID" "value" .Values.cfZoneId))
+) }}
+{{- end }}
+
+{{- if .Values.pipelines.proxmoxK8s.enabled }}
+{{ include "fabric-pipelines.cronjob" (dict
+    "name" "proxmox-k8s"
+    "pipeline" "4-proxmox-k8s"
+    "schedule" .Values.pipelines.proxmoxK8s.schedule
+    "resources" .Values.resources
+    "root" .
+    "extraEnv" (list)
+) }}
+{{- end }}
+
+{{- if .Values.pipelines.opsChat.enabled }}
+{{ include "fabric-pipelines.cronjob" (dict
+    "name" "ops-chat"
+    "pipeline" "5-ops-chat"
+    "schedule" .Values.pipelines.opsChat.schedule
+    "resources" .Values.opsChat.resources
+    "root" .
+    "extraEnv" (list)
+) }}
+{{- end }}
