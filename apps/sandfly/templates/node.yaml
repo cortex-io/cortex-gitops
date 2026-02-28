@@ -1,0 +1,57 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandfly-node
+  namespace: sandfly
+  labels:
+    app.kubernetes.io/name: sandfly-node
+    app.kubernetes.io/part-of: sandfly
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sandfly-node
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sandfly-node
+        app.kubernetes.io/part-of: sandfly
+    spec:
+      serviceAccountName: sandfly
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # Wait for the server to be healthy before starting the node
+        - name: wait-for-server
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Sandfly server to be ready..."
+              until curl -sk https://sandfly-server.sandfly.svc.cluster.local/v4/status | grep -q '"status"'; do
+                echo "Server not ready yet..."
+                sleep 15
+              done
+              echo "Sandfly server is ready."
+      containers:
+        - name: sandfly-node
+          image: quay.io/sandfly/sandfly:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/opt/sandfly/start_node.sh"]
+          env:
+            - name: CONFIG_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: sandfly-config
+                  key: config.node.json
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi

@@ -1,0 +1,314 @@
+---
+# sandfly-setup Job
+#
+# Runs the Sandfly install scripts directly inside the Sandfly image as
+# Kubernetes init containers — no Docker required.
+#
+# Steps:
+#   init-1: Generate postgres secret (sandfly-postgres-secret)
+#   init-2: Wait for postgres ready
+#   init-3: Run Sandfly setup scripts (keys, SSL, server config, DB migration)
+#   main:   Write config.server.json + config.node.json as sandfly-config Secret
+#
+# Idempotent: skips if target Secrets already exist.
+# Deleted automatically 10 min after success (ttlSecondsAfterFinished).
+# ArgoCD PostSync hook: runs after base resources are applied.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sandfly-setup
+  namespace: sandfly
+  labels:
+    app.kubernetes.io/name: sandfly-setup
+    app.kubernetes.io/part-of: sandfly
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sandfly-setup
+        app.kubernetes.io/part-of: sandfly
+    spec:
+      serviceAccountName: sandfly-setup
+      restartPolicy: OnFailure
+      volumes:
+        - name: setup-data
+          emptyDir: {}
+
+      initContainers:
+        # ── 1. Generate postgres secret if not present ───────────────────────
+        - name: init-postgres-secret
+          image: bitnami/kubectl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              if kubectl get secret sandfly-postgres-secret -n sandfly 2>/dev/null; then
+                echo "sandfly-postgres-secret already exists, skipping."
+                exit 0
+              fi
+              PG_PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 40)
+              kubectl create secret generic sandfly-postgres-secret \
+                -n sandfly \
+                --from-literal=POSTGRES_USER=sandfly \
+                --from-literal=POSTGRES_PASSWORD="${PG_PASS}" \
+                --from-literal=POSTGRES_DB=sandfly
+              echo "Created sandfly-postgres-secret."
+
+        # ── 2. Wait for postgres ─────────────────────────────────────────────
+        - name: init-wait-postgres
+          image: postgres:18.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for sandfly-postgres..."
+              until pg_isready \
+                -h sandfly-postgres.sandfly.svc.cluster.local \
+                -U sandfly -d sandfly; do
+                sleep 3
+              done
+              echo "PostgreSQL ready."
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sandfly-postgres-secret
+                  key: POSTGRES_PASSWORD
+
+        # ── 3. Run Sandfly setup scripts inside the Sandfly image ────────────
+        #    This is exactly what `install.sh` does, but without Docker.
+        #    We run the internal scripts directly since we ARE the container.
+        - name: init-sandfly-setup
+          image: quay.io/sandfly/sandfly:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              SANDFLY_DIR=/opt/sandfly
+              SETUP_DATA_DIR=$SANDFLY_DIR/install/setup_data
+              SHARED=/shared
+
+              # Already done?
+              if [ -f "$SHARED/config.server.json" ] && [ -f "$SHARED/config.node.json" ]; then
+                echo "Configs already in shared volume. Skipping setup."
+                exit 0
+              fi
+
+              # setup_data must be writable — copy image's read-only dir to writable location
+              mkdir -p $SETUP_DATA_DIR
+              chmod 777 $SETUP_DATA_DIR
+
+              # ── Step A: Generate passwords & write intermediate files ──────
+              export SANDFLY_AUTO=YES
+              export SANDFLY_SETUP_AUTO_HOSTNAME="{{ .Values.serverFqdn }}"
+              export SSL_SERVER_HOSTNAME="{{ .Values.serverFqdn }}"
+
+              # Use the postgres password that was already set when the DB was initialized
+              POSTGRES_SANDFLY_PASSWORD="$POSTGRES_SANDFLY_PASSWORD_FROM_SECRET"
+              API_NODE_PASSWORD=$(openssl rand -base64 100 | tr -dc _A-Z-a-z-0-9 | head -c 40)
+              JWT_SIGNING_KEY=$(openssl rand -base64 100 | tr -dc _A-Z-a-z-0-9 | head -c 40)
+              ADMIN_PASSWORD=$($SANDFLY_DIR/utils/diceware -words 7 -separator - | tr '[:upper:]' '[:lower:]')
+              POSTGRES_ADMIN_PASSWORD=$POSTGRES_SANDFLY_PASSWORD
+
+              POSTGRES_CONNECTION_STRING="host=sandfly-postgres.sandfly.svc.cluster.local user=sandfly password=$POSTGRES_SANDFLY_PASSWORD dbname=sandfly sslmode=disable"
+
+              echo "$POSTGRES_SANDFLY_PASSWORD"   > $SETUP_DATA_DIR/postgres.sandfly.password.txt
+              echo "$POSTGRES_ADMIN_PASSWORD"     > $SETUP_DATA_DIR/postgres.admin.password.txt
+              echo "$POSTGRES_CONNECTION_STRING"  > $SETUP_DATA_DIR/postgres.connstr.txt
+              echo "$API_NODE_PASSWORD"           > $SETUP_DATA_DIR/api.node.password.txt
+              echo "$SANDFLY_SETUP_AUTO_HOSTNAME" > $SETUP_DATA_DIR/api.server.hostname.txt
+              echo "$JWT_SIGNING_KEY"             > $SETUP_DATA_DIR/jwt.signing.key.txt
+              echo "$ADMIN_PASSWORD"              > $SETUP_DATA_DIR/admin.password.txt
+
+              echo "Passwords generated."
+
+              # ── Step B: Generate ed25519 keypairs ────────────────────────
+              echo "Generating ed25519 keypairs..."
+              cd $SANDFLY_DIR/utils
+              ./genkeypair -k $SETUP_DATA_DIR/node.ed25519.key
+              ./genkeypair -k $SETUP_DATA_DIR/server.ed25519.key
+              echo "Keypairs generated."
+
+              # ── Step C: Generate internal CA and server TLS cert ─────────
+              echo "Generating internal CA..."
+              cd $SANDFLY_DIR/install
+              ./install_ssl.sh
+              echo "SSL certs generated."
+
+              # ── Step D: DB migration (schema init) ───────────────────────
+              # We skip install_db.sh (which would try to CREATE USER/DATABASE
+              # via the postgres superuser). The postgres container already
+              # created the sandfly user and database from env vars.
+              # We just need to run dbmigrate with the correct connstr.
+              echo "Running dbmigrate..."
+              export PGPASSWORD=$POSTGRES_SANDFLY_PASSWORD
+              cd $SANDFLY_DIR/utils
+              CONFIG_JSON="{\"server\":{\"db\":{\"postgres\":{\"connstr\":\"$POSTGRES_CONNECTION_STRING\"}}}}" \
+                ./dbmigrate
+              echo "dbmigrate complete."
+
+              # ── Step E: Create Sandfly application users ─────────────────
+              echo "Creating system and admin users..."
+              export API_NODE_PASSWORD=$API_NODE_PASSWORD
+              export ADMIN_PASSWORD=$ADMIN_PASSWORD
+              cd $SANDFLY_DIR/utils
+              ./adduser -o -u system -p $API_NODE_PASSWORD -r system -n "Sandfly System API Account"
+              ./adduser -o -u admin  -p $ADMIN_PASSWORD   -r admin  -n "Sandfly Admin Account"
+              echo "Users created. Admin password: $ADMIN_PASSWORD"
+              # Save admin password to shared volume for the secret writer to capture
+              echo "$ADMIN_PASSWORD" > $SHARED/admin.password.txt
+
+              # ── Step F: Assemble config JSON files ───────────────────────
+              # Templates are NOT bundled in the image's setup_data dir —
+              # write them ourselves from the known upstream template content.
+              echo "Writing config templates..."
+              mkdir -p $SETUP_DATA_DIR/templates
+              cat > $SETUP_DATA_DIR/templates/config.server.template.json << 'TMPL'
+{
+	"config_version": 4,
+	"server": {
+		"keys": {
+			"server": {
+				"public_key": "server_keys_server_public_key_b64",
+				"private_key": "server_keys_server_private_key_b64"
+			},
+			"node": {
+				"public_key": "server_keys_node_public_key_b64"
+			},
+			"jwt": "server_keys_jwt"
+		},
+		"ssl": {
+			"server": {
+				"cacert": "server_ssl_server_cacert_b64",
+				"cert": "server_ssl_server_cert_b64",
+				"cert_signed": "server_ssl_server_cert_signed_b64",
+				"private_key": "server_ssl_server_key_b64",
+				"private_key_signed": "server_ssl_server_key_signed_b64"
+			}
+		},
+		"api": {
+			"hostname": "api_hostname",
+			"password": "api_password"
+		},
+		"db": {
+			"postgres": {
+				"connstr": "db_postgres_connstr",
+				"pool_size": 20,
+				"pool_size_nodes": 30,
+				"result_workers": 20,
+				"postgres_password": "db_postgres_postgres_password",
+				"sandfly_password": "db_postgres_sandfly_password"
+			}
+		},
+		"options": {
+			"log_level": "info",
+			"disable_strict_tls_policy": false,
+			"ui_session_timeout_minutes": 60,
+			"ui_session_expiration_minutes": 1440,
+			"disable_nightly_maintenance": false
+		}
+	}
+}
+TMPL
+              cat > $SETUP_DATA_DIR/templates/config.node.template.json << 'TMPL'
+{
+	"node": {
+		"keys": {
+			"server": {
+				"public_key": "node_keys_server_public_key_b64"
+			},
+			"node": {
+				"private_key": "node_keys_node_private_key_b64"
+			}
+		},
+		"ssl": {
+			"server": {
+				"cacert": "node_ssl_server_cacert_b64"
+			},
+			"node": {
+				"cert": "node_ssl_node_cert_b64",
+				"private_key": "node_ssl_node_key_b64"
+			}
+		},
+		"api": {
+			"hostname": "api_hostname",
+			"password": "api_password"
+		},
+		"options": {
+			"ignore_ssl_certs": true,
+			"simulator_multiplier": 0,
+			"remove_dir_when_done": true,
+			"default_directory": "",
+			"fallback_directory": "/dev/shm",
+			"concurrency": 500,
+			"log_level": "info",
+			"queue_name": "main"
+		}
+	}
+}
+TMPL
+              echo "Templates written."
+
+              echo "Assembling config JSON files..."
+              cd $SANDFLY_DIR/install
+              ./install_config_json.sh
+              echo "Config JSON assembled."
+
+              # ── Copy results to shared volume ─────────────────────────────
+              cp $SETUP_DATA_DIR/config.server.json $SHARED/config.server.json
+              cp $SETUP_DATA_DIR/config.node.json   $SHARED/config.node.json
+
+              echo "=== Setup complete ==="
+              echo "Server config: $(python3 -c "import json; d=json.load(open('$SHARED/config.server.json')); print('hostname=', d['server']['api']['hostname'])")"
+          env:
+            - name: POSTGRES_SANDFLY_PASSWORD_FROM_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sandfly-postgres-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: setup-data
+              mountPath: /shared
+
+      # ── Main: Write configs to k8s Secret ────────────────────────────────
+      containers:
+        - name: write-config-secret
+          image: bitnami/kubectl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              SHARED=/shared
+
+              if kubectl get secret sandfly-config -n sandfly 2>/dev/null; then
+                echo "sandfly-config already exists, skipping."
+                exit 0
+              fi
+
+              kubectl create secret generic sandfly-config \
+                -n sandfly \
+                --from-file=config.server.json="${SHARED}/config.server.json" \
+                --from-file=config.node.json="${SHARED}/config.node.json" \
+                --from-file=admin.password.txt="${SHARED}/admin.password.txt"
+
+              ADMIN_PW=$(cat "${SHARED}/admin.password.txt")
+              echo "====================================================="
+              echo "Sandfly setup complete!"
+              echo "Admin password stored in secret sandfly-config"
+              echo "  kubectl get secret sandfly-config -n sandfly -o jsonpath='{.data.admin\\.password\\.txt}' | base64 -d"
+              echo "====================================================="
+          volumeMounts:
+            - name: setup-data
+              mountPath: /shared
