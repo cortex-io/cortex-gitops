@@ -161,6 +161,8 @@ spec:
                   name: {{ .Values.secretName }}
                   key: sandfly-password
                   optional: true
+            - name: SANDFLY_VERIFY_SSL
+              value: "false"
           volumeMounts:
             - name: gateway-config
               mountPath: /app/gateway.yaml
