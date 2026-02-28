@@ -153,13 +153,6 @@ data:
             target: newtab
             statusCheck: true
 
-          - title: Wazuh Security
-            description: Security monitoring - 8 K3s nodes + UniFi syslog
-            icon: fas fa-shield-virus
-            url: http://wazuh.cortex.local
-            target: newtab
-            statusCheck: true
-
       - name: Security & Scanning
         icon: fas fa-shield-alt
         items:
@@ -276,7 +269,7 @@ data:
             statusCheck: true
 
           - title: k3s-worker03-agent
-            description: 10.88.145.194 - Wazuh manager host
+            description: 10.88.145.194
             icon: fas fa-cube
             url: http://10.88.145.194:61208
             target: newtab

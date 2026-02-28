@@ -51,7 +51,6 @@ spec:
               {"name": "ArgoCD", "confidence": 0.92, "sources": 8, "patterns": 23},
               {"name": "GitOps", "confidence": 0.90, "sources": 10, "patterns": 31},
               {"name": "UniFi", "confidence": 0.75, "sources": 4, "patterns": 12},
-              {"name": "n8n", "confidence": 0.70, "sources": 3, "patterns": 8},
               {"name": "Prometheus", "confidence": 0.88, "sources": 7, "patterns": 19},
               {"name": "Grafana", "confidence": 0.85, "sources": 6, "patterns": 15},
               {"name": "Redis", "confidence": 0.80, "sources": 5, "patterns": 14},
@@ -72,7 +71,6 @@ spec:
                   "Data": ["Redis", "PostgreSQL"],
                   "Development": ["Python"],
                   "Networking": ["UniFi"],
-                  "Automation": ["n8n"],
                   "Security": ["Security"]
               },
               "summary": {

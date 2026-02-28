@@ -4,50 +4,7 @@ This document outlines manual steps that must be completed by the user to fully 
 
 ---
 
-## 1. n8n API Key Generation
-
-The n8n MCP server requires an API key to interact with the n8n instance.
-
-### Steps:
-
-1. Access n8n web interface at: `https://n8n.ry-ops.dev`
-
-2. Navigate to **Settings → API**
-
-3. Generate a new API key:
-   - Click **"Create API Key"**
-   - Give it a descriptive name: `MCP Server Integration`
-   - Copy the generated key immediately (it won't be shown again)
-
-4. Create Kubernetes Secret:
-   ```bash
-   kubectl create secret generic n8n-mcp-credentials \
-     -n cortex-system \
-     --from-literal=N8N_API_KEY='your-api-key-here'
-   ```
-
-5. Update the n8n MCP server deployment to use the secret:
-   ```bash
-   # Edit the deployment
-   kubectl edit deployment n8n-mcp-server -n cortex-system
-
-   # Add environment variable:
-   env:
-   - name: N8N_API_KEY
-     valueFrom:
-       secretKeyRef:
-         name: n8n-mcp-credentials
-         key: N8N_API_KEY
-   ```
-
-6. Restart the n8n MCP server:
-   ```bash
-   kubectl rollout restart deployment n8n-mcp-server -n cortex-system
-   ```
-
----
-
-## 2. CheckMK Automation User Creation
+## 1. CheckMK Automation User Creation
 
 The CheckMK MCP server requires an automation user for API access.
 
@@ -187,7 +144,7 @@ k3s-master02   67% memory usage
 
 ```
 - kubernetes-mcp-server (pending 10+ hours)
-- n8n-mcp-server (pending 10+ hours)
+--mcp-server (pending 10+ hours)
 - checkmk-mcp-server (just created, pending)
 - cloudflare-mcp-server (pending)
 - proxmox-mcp-server (pending)
@@ -235,7 +192,7 @@ After completing the above steps, validate all MCP servers are healthy:
 /Users/ryandahlberg/Projects/cortex-gitops/scripts/mcp-quick-fixes.sh
 
 # Check individual server health endpoints
-for server in unifi proxmox sandfly cloudflare checkmk kubernetes n8n; do
+for server in unifi proxmox sandfly cloudflare checkmk kubernetes; do
   echo "Checking ${server}-mcp-server..."
   kubectl exec -n cortex-system deploy/${server}-mcp-server -- \
     wget -qO- http://localhost:8080/health || echo "Failed"
@@ -246,7 +203,7 @@ done
 
 ## Summary Checklist
 
-- [ ] Generate n8n API key and create secret
+- [ ] Generate API key and create secret
 - [ ] Create CheckMK automation user and secret
 - [ ] (Optional) Generate Cloudflare API token and secret
 - [ ] Address cluster memory pressure

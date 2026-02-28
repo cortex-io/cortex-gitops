@@ -24,7 +24,7 @@ data:
         - name: automation
           endpoint: http://cortex-orchestrator.cortex.svc.cluster.local:8000
           weight: 1.5
-          specialization: "workflow automation, n8n, langflow"
+          specialization: "workflow automation, langflow"
 
     qdrant:
       host: qdrant.cortex-chat.svc.cluster.local
@@ -403,8 +403,6 @@ data:
                     expert = 'virtualization'
                 elif any(kw in msg_lower for kw in ['unifi', 'network', 'wifi', 'client', 'device']):
                     expert = 'network'
-                elif any(kw in msg_lower for kw in ['n8n', 'workflow', 'automat', 'langflow']):
-                    expert = 'automation'
 
             except Exception as e:
                 logger.error(f"Claude API error: {e}")
@@ -745,7 +743,6 @@ data:
             intent_prompt = f"""Classify this user message into one of these categories:
             - infrastructure: Kubernetes, pods, deployments, nodes, services
             - security: Sandfly alerts, vulnerabilities, security events
-            - automation: n8n workflows, task automation
             - general: Everything else
 
             User message: {message}

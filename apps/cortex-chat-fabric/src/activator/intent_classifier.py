@@ -83,14 +83,6 @@ class IntentClassifier:
             "expert": "cortex",
             "fabric": "cortex"
         },
-        "n8n": {
-            "keywords": [
-                "n8n", "automate", "automation", "workflow automation",
-                "trigger", "schedule", "cron", "webhook", "execute workflow"
-            ],
-            "expert": "n8n",
-            "fabric": "n8n"
-        },
         "school": {
             "keywords": [
                 "school", "learning", "learn", "module", "modules", "quiz",
@@ -171,14 +163,13 @@ class IntentClassifier:
 - cloudflare: DNS, tunnels, WAF, zones, cache, CDN
 - sandfly: Sandfly scans, threats, alerts, host security, compliance
 - cortex: System status, agents, fabrics, help, what can you do
-- automation: n8n workflows, automation, scheduling
 - school: Learning modules, quizzes, blog posts, knowledge base, education
 - tailscale: Tailscale VPN, tailnet, ACLs, exit nodes, MagicDNS
 - general: General conversation, greetings, or unclear intent
 
 User message: {message}
 
-Respond with ONLY one word: network, proxmox, kubernetes, github, cloudflare, sandfly, cortex, automation, school, tailscale, or general"""
+Respond with ONLY one word: network, proxmox, kubernetes, github, cloudflare, sandfly, cortex, school, tailscale, or general"""
 
         response = await self.client.messages.create(
             model="claude-3-5-haiku-20241022",
@@ -197,7 +188,6 @@ Respond with ONLY one word: network, proxmox, kubernetes, github, cloudflare, sa
             "cloudflare": {"expert": "cloudflare", "fabric": "cloudflare"},
             "sandfly": {"expert": "sandfly", "fabric": "sandfly"},
             "cortex": {"expert": "cortex", "fabric": "cortex"},
-            "automation": {"expert": "n8n", "fabric": "n8n"},
             "school": {"expert": "school", "fabric": "school"},
             "tailscale": {"expert": "tailscale", "fabric": "tailscale"},
             "general": {"expert": "general", "fabric": None}

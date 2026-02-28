@@ -33,7 +33,7 @@ echo ""
 
 # 3. Check if pending MCP servers can now schedule
 echo "3. Checking pending MCP server pods..."
-PENDING_PODS=$(kubectl get pods -n cortex-system 2>/dev/null | grep -E "(kubernetes|n8n|checkmk)-mcp-server" | grep Pending || true)
+PENDING_PODS=$(kubectl get pods -n cortex-system 2>/dev/null | grep -E "(kubernetes|checkmk)-mcp-server" | grep Pending || true)
 if [ -z "$PENDING_PODS" ]; then
   echo "  ✓ No pending pods!"
 else

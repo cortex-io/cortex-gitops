@@ -127,9 +127,7 @@
   - Port: `3003`
   - GitHub security scanning
 
-- **n8n-mcp-server** (1/1)
   - Port: `3002`
-  - n8n workflow automation
 
 - **cloudflare-mcp-server** (0/1 CrashLoopBackOff)
   - Port: `3000`
@@ -686,8 +684,6 @@ Workers → Git Commit → ArgoCD → Health Monitor → Verify/Rollback
    - GitHub security scanning
    - Dependabot alerts
 
-8. **n8n-mcp-server** (`cortex-system`)
-   - n8n workflow automation
    - Integration platform
 
 9. **cortex-desktop-mcp** (`cortex`)
