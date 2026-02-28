@@ -1,23 +1,42 @@
 ---
-# Tailscale Ingress — accessible only via Tailscale (sandfly.ry-ops.dev)
-# TLS is provided by Tailscale (cert-manager not needed here)
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# ServersTransport: skip TLS verification on the sandfly backend (self-signed cert)
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: sandfly-insecure
+  namespace: sandfly
+spec:
+  insecureSkipVerify: true
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sandfly-tls
+  namespace: sandfly
+spec:
+  secretName: sandfly-tls
+  dnsNames:
+    - {{ .Values.hostname }}
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned-issuer
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
   name: sandfly
   namespace: sandfly
-  labels:
-    app.kubernetes.io/name: sandfly
-    app.kubernetes.io/part-of: sandfly
-  annotations:
-    tailscale.com/funnel: "false"  # No public funnel — Tailscale network only
 spec:
-  ingressClassName: tailscale
-  defaultBackend:
-    service:
-      name: sandfly-server
-      port:
-        name: https
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`{{ .Values.hostname }}`)
+      services:
+        - name: sandfly-server
+          port: 443
+          serversTransport: sandfly-insecure
   tls:
-    - hosts:
-        - {{ .Values.hostname }}
+    secretName: sandfly-tls

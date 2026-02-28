@@ -1,0 +1,32 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fabric-gateway-tls
+  namespace: cortex-system
+spec:
+  secretName: fabric-gateway-tls
+  dnsNames:
+    - gateway.ry-ops.dev
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned-issuer
+
+---
+# Internal/Tailscale access to gateway API and MCP endpoint
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fabric-gateway
+  namespace: cortex-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`gateway.ry-ops.dev`)
+      services:
+        - name: fabric-gateway
+          port: 3000
+  tls:
+    secretName: fabric-gateway-tls
