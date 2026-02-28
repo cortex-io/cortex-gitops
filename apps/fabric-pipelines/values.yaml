@@ -1,0 +1,55 @@
+image:
+  repository: ghcr.io/git-fabric/pipelines
+  tag: latest
+  pullPolicy: Always
+
+imagePullSecret: ghcr-pull-secret
+
+# Secret containing API credentials — same one used by fabric-gateway
+secretName: fabric-gateway-secrets
+
+# In-cluster gateway URL
+gatewayUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
+
+# Cloudflare zone for network-audit
+cfZoneId: "055fc6396e0456826c7e31684284f5be"
+
+# Resource defaults for most pipelines (light workloads)
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Resource overrides for the daily briefing (uses claude-opus-4-6)
+opsChat:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+pipelines:
+  securityTriage:
+    enabled: true
+    schedule: "0 */6 * * *"
+
+  gitopsObserver:
+    enabled: true
+    schedule: "*/15 * * * *"
+
+  networkAudit:
+    enabled: true
+    schedule: "0 2 * * *"
+
+  proxmoxK8s:
+    enabled: true
+    schedule: "*/30 * * * *"
+
+  opsChat:
+    enabled: true
+    schedule: "0 8 * * *"

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fabric-pipelines
+description: "Automated fabric pipelines — composing gateway tools into ambient homelab intelligence"
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

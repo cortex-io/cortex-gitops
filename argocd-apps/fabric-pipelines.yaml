@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fabric-pipelines
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: git-fabric
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/cortex-io/cortex-gitops.git
+    targetRevision: main
+    path: apps/fabric-pipelines
+    helm:
+      releaseName: fabric-pipelines
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cortex-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
