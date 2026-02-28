@@ -1,0 +1,31 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fabric-chat-tls
+  namespace: cortex-system
+spec:
+  secretName: fabric-chat-tls
+  dnsNames:
+    - chat.ry-ops.dev
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned-issuer
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fabric-chat
+  namespace: cortex-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`chat.ry-ops.dev`)
+      services:
+        - name: fabric-chat
+          port: 3000
+  tls:
+    secretName: fabric-chat-tls
