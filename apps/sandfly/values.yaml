@@ -1,0 +1,15 @@
+image:
+  repository: quay.io/sandfly/sandfly
+  tag: "5.6.0"
+  pullPolicy: IfNotPresent
+
+postgres:
+  image: postgres:18.1
+  storage: 20Gi
+  storageClass: longhorn
+
+# sandfly.ry-ops.dev — served via Tailscale Ingress (Tailscale-only, no public exposure)
+hostname: sandfly.ry-ops.dev
+
+# Internal service FQDN used by node to connect to server
+serverFqdn: sandfly-server.sandfly.svc.cluster.local

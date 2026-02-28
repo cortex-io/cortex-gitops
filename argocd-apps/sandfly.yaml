@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sandfly
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: sandfly
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/cortex-io/cortex-gitops.git
+    targetRevision: main
+    path: apps/sandfly
+    helm:
+      releaseName: sandfly
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sandfly
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

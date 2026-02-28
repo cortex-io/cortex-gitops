@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sandfly-postgres
+  namespace: sandfly
+  labels:
+    app.kubernetes.io/name: sandfly-postgres
+    app.kubernetes.io/part-of: sandfly
+spec:
+  serviceName: sandfly-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sandfly-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sandfly-postgres
+        app.kubernetes.io/part-of: sandfly
+    spec:
+      serviceAccountName: sandfly
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: sandfly-postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sandfly-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: sandfly-postgres-secret
+                  key: POSTGRES_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sandfly", "-d", "sandfly"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sandfly", "-d", "sandfly"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.postgres.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandfly-postgres
+  namespace: sandfly
+  labels:
+    app.kubernetes.io/name: sandfly-postgres
+    app.kubernetes.io/part-of: sandfly
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: sandfly-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
