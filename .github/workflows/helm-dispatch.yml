@@ -1,0 +1,158 @@
+name: helm-dispatch
+
+# Dispatch a helm upgrade to the cluster and report the result back to git-steer-state.
+# Called by fabric pipelines for applying Helm chart changes.
+#
+# Payload:
+#   release      — Helm release name (e.g. "fabric-chat")
+#   namespace    — Kubernetes namespace (e.g. "cortex-system")
+#   chart        — Helm chart (e.g. "oci://ghcr.io/git-fabric/charts/fabric-chat")
+#   values       — JSON object of values to set (e.g. {"image.tag": "abc1234"})
+#   job_id       — unique ID for tracking in git-steer-state
+#   reason       — human-readable reason for the dispatch
+#   dry_run      — if "true", use --dry-run flag (default: false)
+
+on:
+  repository_dispatch:
+    types: [helm-dispatch]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Helm release name"
+        required: true
+      namespace:
+        description: "Kubernetes namespace"
+        required: true
+        default: "cortex-system"
+      chart:
+        description: "Helm chart reference"
+        required: true
+      values:
+        description: "JSON values to override (e.g. {\"key\":\"val\"})"
+        required: false
+        default: "{}"
+      job_id:
+        description: "Unique job ID for tracking"
+        required: false
+        default: "manual"
+      reason:
+        description: "Reason for this dispatch"
+        required: false
+        default: "Manual helm dispatch"
+      dry_run:
+        description: "Dry run"
+        required: false
+        default: "false"
+
+jobs:
+  helm-dispatch:
+    name: "helm upgrade ${{ github.event.client_payload.release || inputs.release }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Set variables
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "release=${{ github.event.client_payload.release }}" >> $GITHUB_OUTPUT
+            echo "namespace=${{ github.event.client_payload.namespace }}" >> $GITHUB_OUTPUT
+            echo "chart=${{ github.event.client_payload.chart }}" >> $GITHUB_OUTPUT
+            echo "job_id=${{ github.event.client_payload.job_id }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ github.event.client_payload.reason }}" >> $GITHUB_OUTPUT
+            echo "dry_run=${{ github.event.client_payload.dry_run }}" >> $GITHUB_OUTPUT
+            echo '${{ toJson(github.event.client_payload.values) }}' > /tmp/values.json
+          else
+            echo "release=${{ inputs.release }}" >> $GITHUB_OUTPUT
+            echo "namespace=${{ inputs.namespace }}" >> $GITHUB_OUTPUT
+            echo "chart=${{ inputs.chart }}" >> $GITHUB_OUTPUT
+            echo "job_id=${{ inputs.job_id }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ inputs.reason }}" >> $GITHUB_OUTPUT
+            echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
+            echo '${{ inputs.values }}' > /tmp/values.json
+          fi
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Install kubectl + helm
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.33.0'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.17.0'
+
+      - name: Build helm set flags
+        id: setflags
+        run: |
+          FLAGS=""
+          # Convert JSON values to --set flags
+          while IFS="=" read -r key value; do
+            FLAGS="$FLAGS --set ${key}=${value}"
+          done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' /tmp/values.json)
+          echo "flags=$FLAGS" >> $GITHUB_OUTPUT
+
+      - name: Execute helm upgrade
+        id: helm
+        run: |
+          DRY=""
+          if [ "${{ steps.vars.outputs.dry_run }}" = "true" ]; then
+            DRY="--dry-run"
+          fi
+
+          CMD="helm upgrade --install ${{ steps.vars.outputs.release }} ${{ steps.vars.outputs.chart }} \
+            --namespace ${{ steps.vars.outputs.namespace }} \
+            --reuse-values \
+            ${{ steps.setflags.outputs.flags }} \
+            $DRY"
+
+          echo "::notice::Running: $CMD"
+          echo "::notice::Reason: ${{ steps.vars.outputs.reason }}"
+
+          OUTPUT=$(eval "$CMD" 2>&1) || true
+          EXIT_CODE=$?
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+          fi
+          echo "$OUTPUT"
+
+      - name: Report result to git-steer-state
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          RESULT="${{ steps.helm.outputs.result }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          ENTRY=$(jq -n \
+            --arg ts "$TIMESTAMP" \
+            --arg job_id "${{ steps.vars.outputs.job_id }}" \
+            --arg result "$RESULT" \
+            --arg release "${{ steps.vars.outputs.release }}" \
+            --arg namespace "${{ steps.vars.outputs.namespace }}" \
+            --arg reason "${{ steps.vars.outputs.reason }}" \
+            --arg output "${{ steps.helm.outputs.output }}" \
+            --arg run_url "$RUN_URL" \
+            '{ts: $ts, job_id: $job_id, result: $result, release: $release, namespace: $namespace, reason: $reason, output: $output, run_url: $run_url}')
+
+          git clone --depth=1 https://x-access-token:${GH_TOKEN}@github.com/ry-ops/git-steer-state.git state-repo
+          cd state-repo
+          mkdir -p dispatch
+          echo "$ENTRY" >> dispatch/helm-jobs.jsonl
+          git config user.email "actions@github.com"
+          git config user.name "fabric-dispatch"
+          git add dispatch/helm-jobs.jsonl
+          git commit -m "dispatch: helm upgrade ${{ steps.vars.outputs.release }} ($RESULT) [${{ steps.vars.outputs.job_id }}]"
+          git push

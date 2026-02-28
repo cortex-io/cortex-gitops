@@ -1,0 +1,124 @@
+name: kubectl-dispatch
+
+# Dispatch a kubectl command to the cluster and report the result back to git-steer-state.
+# Called by fabric pipelines via repository_dispatch event.
+#
+# Payload:
+#   command      — the kubectl command to run (e.g. "rollout restart deploy/fabric-chat -n cortex-system")
+#   job_id       — unique ID for tracking in git-steer-state (e.g. "gitops-observer/2026-02-28T08-00-00")
+#   reason       — human-readable reason for the dispatch (logged in state repo)
+#   dry_run      — if "true", echo command only, don't execute (default: false)
+
+on:
+  repository_dispatch:
+    types: [kubectl-dispatch]
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "kubectl command (without 'kubectl' prefix)"
+        required: true
+      job_id:
+        description: "Unique job ID for tracking"
+        required: false
+        default: "manual"
+      reason:
+        description: "Reason for this dispatch"
+        required: false
+        default: "Manual dispatch"
+      dry_run:
+        description: "Dry run (echo only, no execute)"
+        required: false
+        default: "false"
+
+jobs:
+  kubectl-dispatch:
+    name: "kubectl ${{ github.event.client_payload.command || inputs.command }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Set variables
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "command=${{ github.event.client_payload.command }}" >> $GITHUB_OUTPUT
+            echo "job_id=${{ github.event.client_payload.job_id }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ github.event.client_payload.reason }}" >> $GITHUB_OUTPUT
+            echo "dry_run=${{ github.event.client_payload.dry_run }}" >> $GITHUB_OUTPUT
+          else
+            echo "command=${{ inputs.command }}" >> $GITHUB_OUTPUT
+            echo "job_id=${{ inputs.job_id }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ inputs.reason }}" >> $GITHUB_OUTPUT
+            echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.33.0'
+
+      - name: Execute kubectl command
+        id: kubectl
+        run: |
+          COMMAND="kubectl ${{ steps.vars.outputs.command }}"
+          echo "::notice::Running: $COMMAND"
+          echo "::notice::Reason: ${{ steps.vars.outputs.reason }}"
+
+          if [ "${{ steps.vars.outputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN — would execute: $COMMAND"
+            echo "result=dry-run" >> $GITHUB_OUTPUT
+            echo "output=DRY RUN: $COMMAND" >> $GITHUB_OUTPUT
+          else
+            OUTPUT=$(eval "$COMMAND" 2>&1) || true
+            EXIT_CODE=$?
+            echo "output<<EOF" >> $GITHUB_OUTPUT
+            echo "$OUTPUT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            if [ $EXIT_CODE -eq 0 ]; then
+              echo "result=success" >> $GITHUB_OUTPUT
+            else
+              echo "result=failed" >> $GITHUB_OUTPUT
+            fi
+            echo "$OUTPUT"
+          fi
+
+      - name: Report result to git-steer-state
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          JOB_ID="${{ steps.vars.outputs.job_id }}"
+          RESULT="${{ steps.kubectl.outputs.result }}"
+          COMMAND="${{ steps.vars.outputs.command }}"
+          REASON="${{ steps.vars.outputs.reason }}"
+          OUTPUT="${{ steps.kubectl.outputs.output }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Write JSONL entry to git-steer-state dispatch log
+          ENTRY=$(jq -n \
+            --arg ts "$TIMESTAMP" \
+            --arg job_id "$JOB_ID" \
+            --arg result "$RESULT" \
+            --arg command "kubectl $COMMAND" \
+            --arg reason "$REASON" \
+            --arg output "$OUTPUT" \
+            --arg run_url "$RUN_URL" \
+            '{ts: $ts, job_id: $job_id, result: $result, command: $command, reason: $reason, output: $output, run_url: $run_url}')
+
+          # Clone state repo and append entry
+          git clone --depth=1 https://x-access-token:${GH_TOKEN}@github.com/ry-ops/git-steer-state.git state-repo
+          cd state-repo
+          mkdir -p dispatch
+          echo "$ENTRY" >> dispatch/kubectl-jobs.jsonl
+          git config user.email "actions@github.com"
+          git config user.name "fabric-dispatch"
+          git add dispatch/kubectl-jobs.jsonl
+          git commit -m "dispatch: kubectl $COMMAND ($RESULT) [$JOB_ID]"
+          git push
