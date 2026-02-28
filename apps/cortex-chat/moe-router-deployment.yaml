@@ -62,11 +62,19 @@ data:
     anthropic_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     # MCP Server configuration
+    # protocol: "jsonrpc" = plain JSON-RPC POST to root (cortex-unified-mcp)
+    #           "mcp_sse" = MCP SDK StreamableHTTP at /mcp path, SSE response (fabric-gateway)
     MCP_SERVERS = {
-        "cortex-mcp": "http://cortex-mcp-server.cortex-system.svc.cluster.local:3000",
-        "proxmox-mcp": "http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000",
-        "unifi-mcp": "http://unifi-mcp-server.cortex-system.svc.cluster.local:3000",
-        "sandfly-mcp": "http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000",
+        "cortex-mcp": {
+            "url": "http://cortex-unified-mcp.cortex-system.svc.cluster.local:3000",
+            "protocol": "jsonrpc",
+        },
+        # fabric-gateway exposes k8s, tailscale, cloudflare, git, cve, chat, and (when credentialed)
+        # proxmox, unifi, sandfly tools. Registered once to avoid duplicate tool names.
+        "fabric": {
+            "url": "http://fabric-gateway.cortex-system.svc.cluster.local:3000",
+            "protocol": "mcp_sse",
+        },
     }
 
     # Simple in-memory conversation storage
@@ -79,44 +87,100 @@ data:
     mcp_tools_cache = {}
     tool_to_server_map = {}
 
+
+    def _parse_sse_json(text):
+        """Parse the first JSON object from an SSE response body."""
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                payload = line[5:].strip()
+                try:
+                    return json.loads(payload)
+                except Exception:
+                    continue
+        return None
+
+
+    def _mcp_sse_request(base_url, method, params=None):
+        """Send a JSON-RPC request to an MCP SDK server at /mcp (SSE transport)."""
+        body = {"jsonrpc": "2.0", "method": method, "id": 1}
+        if params:
+            body["params"] = params
+        resp = requests.post(
+            f"{base_url}/mcp",
+            json=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"MCP server returned {resp.status_code}")
+        ct = resp.headers.get("Content-Type", "")
+        if "text/event-stream" in ct:
+            data = _parse_sse_json(resp.text)
+        else:
+            data = resp.json()
+        return data
+
+
+    def _jsonrpc_request(base_url, method, params=None):
+        """Send a plain JSON-RPC request to root path."""
+        body = {"jsonrpc": "2.0", "method": method, "id": 1}
+        if params:
+            body["params"] = params
+        resp = requests.post(base_url, json=body, timeout=60)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Server returned {resp.status_code}")
+        return resp.json()
+
+
     def fetch_mcp_tools():
         """Fetch available tools from all MCP servers"""
         global mcp_tools_cache, tool_to_server_map
         all_tools = []
         tool_to_server_map = {}
+        seen_urls = {}  # url -> list of tools already fetched (dedup fabric-gateway)
 
-        for server_name, server_url in MCP_SERVERS.items():
+        for server_name, cfg in MCP_SERVERS.items():
+            server_url = cfg["url"]
+            protocol = cfg["protocol"]
             try:
-                resp = requests.post(
-                    server_url,
-                    json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
-                    timeout=10
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    tools = data.get("result", {}).get("tools", [])
-                    for tool in tools:
-                        tool_name = tool.get("name")
-                        # Prefix tool name with server for uniqueness
-                        prefixed_name = f"{server_name}__{tool_name}"
-                        tool_to_server_map[prefixed_name] = {
-                            "server": server_name,
-                            "url": server_url,
-                            "original_name": tool_name
-                        }
-                        # Convert to Anthropic tool format
-                        all_tools.append({
-                            "name": prefixed_name,
-                            "description": f"[{server_name}] {tool.get('description', '')}",
-                            "input_schema": tool.get("inputSchema", {"type": "object", "properties": {}})
-                        })
-                    logger.info(f"Loaded {len(tools)} tools from {server_name}")
+                if protocol == "mcp_sse":
+                    # Deduplicate: fabric-gateway is listed 3x but is one server
+                    if server_url in seen_urls:
+                        tools = seen_urls[server_url]
+                    else:
+                        data = _mcp_sse_request(server_url, "tools/list")
+                        tools = data.get("result", {}).get("tools", []) if data else []
+                        seen_urls[server_url] = tools
+                else:
+                    data = _jsonrpc_request(server_url, "tools/list")
+                    tools = data.get("result", {}).get("tools", []) if data else []
+
+                for tool in tools:
+                    tool_name = tool.get("name")
+                    prefixed_name = f"{server_name}__{tool_name}"
+                    tool_to_server_map[prefixed_name] = {
+                        "server": server_name,
+                        "url": server_url,
+                        "protocol": protocol,
+                        "original_name": tool_name,
+                    }
+                    all_tools.append({
+                        "name": prefixed_name,
+                        "description": f"[{server_name}] {tool.get('description', '')}",
+                        "input_schema": tool.get("inputSchema", {"type": "object", "properties": {}}),
+                    })
+                logger.info(f"Loaded {len(tools)} tools from {server_name}")
             except Exception as e:
                 logger.error(f"Failed to fetch tools from {server_name}: {e}")
 
         mcp_tools_cache = all_tools
         logger.info(f"Total MCP tools available: {len(all_tools)}")
         return all_tools
+
 
     def call_mcp_tool(tool_name, arguments):
         """Execute a tool call on the appropriate MCP server"""
@@ -126,38 +190,31 @@ data:
         tool_info = tool_to_server_map[tool_name]
         server_url = tool_info["url"]
         original_name = tool_info["original_name"]
+        protocol = tool_info["protocol"]
 
         try:
-            resp = requests.post(
-                server_url,
-                json={
-                    "jsonrpc": "2.0",
-                    "method": "tools/call",
-                    "params": {
-                        "name": original_name,
-                        "arguments": arguments
-                    },
-                    "id": 1
-                },
-                timeout=60
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if "error" in data:
-                    return {"error": data["error"]}
-                result = data.get("result", {})
-                # Extract content from MCP response
-                if isinstance(result, dict) and "content" in result:
-                    content = result["content"]
-                    if isinstance(content, list) and len(content) > 0:
-                        return content[0].get("text", str(content))
-                return result
+            params = {"name": original_name, "arguments": arguments}
+            if protocol == "mcp_sse":
+                data = _mcp_sse_request(server_url, "tools/call", params)
             else:
-                return {"error": f"MCP server returned {resp.status_code}"}
+                data = _jsonrpc_request(server_url, "tools/call", params)
+
+            if data is None:
+                return {"error": "Empty response from MCP server"}
+            if "error" in data:
+                return {"error": data["error"]}
+            result = data.get("result", {})
+            # Extract text content from MCP response
+            if isinstance(result, dict) and "content" in result:
+                content = result["content"]
+                if isinstance(content, list) and len(content) > 0:
+                    return content[0].get("text", str(content))
+            return result
         except requests.exceptions.Timeout:
             return {"error": "MCP tool call timed out"}
         except Exception as e:
             return {"error": str(e)}
+
 
     # Initialize tools on startup
     fetch_mcp_tools()
@@ -188,7 +245,6 @@ data:
         completed = []
 
         for conv_id, msgs in conversations.items():
-            # Get first user message for title
             first_user_msg = next((m for m in msgs if m["role"] == "user"), None)
             title = first_user_msg["content"][:50] + "..." if first_user_msg and len(first_user_msg["content"]) > 50 else (first_user_msg["content"] if first_user_msg else "New Chat")
 
@@ -201,7 +257,6 @@ data:
                 "messageCount": len(msgs)
             }
 
-            # Determine status
             status = conversation_status.get(conv_id, 'active')
 
             if len(msgs) == 0:
@@ -231,45 +286,41 @@ data:
 
     @app.route('/api/conversations/<conversation_id>/status', methods=['PATCH'])
     def update_conversation_status(conversation_id):
-        """Update conversation status (active, in_progress, completed)"""
+        """Update conversation status"""
         data = request.json or {}
         new_status = data.get('status', 'active')
-
         if new_status not in ['active', 'in_progress', 'completed']:
-            return jsonify({"error": "Invalid status. Must be active, in_progress, or completed"}), 400
-
+            return jsonify({"error": "Invalid status"}), 400
         conversation_status[conversation_id] = new_status
         return jsonify({"sessionId": conversation_id, "status": new_status}), 200
 
     @app.route('/api/conversations/<conversation_id>', methods=['DELETE'])
     def delete_conversation(conversation_id):
         """Delete a conversation"""
-        if conversation_id in conversations:
-            del conversations[conversation_id]
-        if conversation_id in conversation_status:
-            del conversation_status[conversation_id]
+        conversations.pop(conversation_id, None)
+        conversation_status.pop(conversation_id, None)
         return jsonify({"deleted": conversation_id}), 200
 
-    # System prompt for Cortex assistant
     SYSTEM_PROMPT = """You are Cortex, an AI infrastructure assistant with direct access to MCP (Model Context Protocol) servers that can query real infrastructure data.
 
-    You have tools to interact with:
-    - Proxmox: Virtual machines, containers, nodes, storage, cluster status
-    - UniFi: Network devices, clients, sites, ISP metrics, SD-WAN
-    - Sandfly: Security scans, host analysis, vulnerability results
-    - Cortex: Cross-system queries with intelligent routing
+    You have access to the following tool sets:
+
+    **cortex-mcp__*** — Cortex intelligence tools (cross-system queries, routing)
+    **fabric__*** — Fabric gateway tools covering:
+      - Kubernetes/k3s: k8s_list_pods, k8s_list_nodes, k8s_list_deployments, k8s_pod_problems, etc.
+      - Tailscale: ts_list_devices, ts_get_acl, ts_get_routes, etc.
+      - Cloudflare: cf_list_zones, cf_list_dns_records, etc.
+      - Git: git_list_repos, git_get_file, git_search_code, etc.
+      - CVE: cve_search, cve_scan_repo, etc.
+      - Chat: chat_message_send, chat_search, etc.
+      - Proxmox (when configured): proxmox_list_nodes, proxmox_list_vms, etc.
+      - UniFi (when configured): unifi_get_sites, unifi_get_clients, etc.
+      - Sandfly (when configured): sandfly_get_hosts, sandfly_run_scan, etc.
 
     IMPORTANT: When users ask about infrastructure status, actively USE your tools to fetch real data.
-    Don't just describe what you could do - actually call the tools and provide real information.
+    Don't describe what you could do - actually call the tools and provide real information.
 
-    For general status queries, good starting tools are:
-    - cortex-mcp__cortex_get_status: Get overall Cortex system status
-    - cortex-mcp__cortex_query: Query any system with natural language
-    - proxmox-mcp__list_nodes: Get Proxmox cluster nodes
-    - proxmox-mcp__list_vms: List all virtual machines
-    - unifi-mcp__get_system_status: Get UniFi network status
-    - sandfly-mcp__sandfly_get_results: Get security scan results
-
+    Use fabric__fabric_apps to see which apps are currently available in the gateway.
     Be concise and present data clearly. Use tables or lists for structured data."""
 
     @app.route('/api/chat', methods=['POST'])
@@ -282,35 +333,23 @@ data:
 
             logger.info(f"Chat request: conversation={conversation_id}, message={message[:50]}...")
 
-            # Store user message
             if conversation_id not in conversations:
                 conversations[conversation_id] = []
-            conversations[conversation_id].append({
-                "role": "user",
-                "content": message
-            })
+            conversations[conversation_id].append({"role": "user", "content": message})
 
-            # Build conversation history for Claude
-            claude_messages = []
-            for msg in conversations[conversation_id]:
-                claude_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+            claude_messages = [{"role": m["role"], "content": m["content"]} for m in conversations[conversation_id]]
 
-            # Get available tools (refresh if empty)
             tools = mcp_tools_cache if mcp_tools_cache else fetch_mcp_tools()
 
-            # Tool use loop - handle multiple tool calls
             max_iterations = 10
             iteration = 0
             tool_calls_made = []
+            assistant_message = ""
 
             try:
                 while iteration < max_iterations:
                     iteration += 1
 
-                    # Call Claude API with tools
                     response = anthropic_client.messages.create(
                         model="claude-sonnet-4-20250514",
                         max_tokens=4096,
@@ -319,9 +358,7 @@ data:
                         tools=tools if tools else None
                     )
 
-                    # Check if Claude wants to use a tool
                     if response.stop_reason == "tool_use":
-                        # Process all tool uses in this response
                         tool_results = []
                         assistant_content = []
 
@@ -334,41 +371,28 @@ data:
                                 logger.info(f"Tool call: {tool_name} with {json.dumps(tool_input)[:100]}...")
                                 tool_calls_made.append({"tool": tool_name, "input": tool_input})
 
-                                # Execute the tool
                                 result = call_mcp_tool(tool_name, tool_input)
                                 result_str = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
 
                                 tool_results.append({
                                     "type": "tool_result",
                                     "tool_use_id": tool_use_id,
-                                    "content": result_str[:10000]  # Limit result size
+                                    "content": result_str[:10000]
                                 })
                                 assistant_content.append(block)
                             elif block.type == "text":
                                 assistant_content.append(block)
 
-                        # Add assistant message with tool use
-                        claude_messages.append({
-                            "role": "assistant",
-                            "content": assistant_content
-                        })
-
-                        # Add tool results
-                        claude_messages.append({
-                            "role": "user",
-                            "content": tool_results
-                        })
+                        claude_messages.append({"role": "assistant", "content": assistant_content})
+                        claude_messages.append({"role": "user", "content": tool_results})
 
                     else:
-                        # No more tool calls - extract final response
                         assistant_message = ""
                         for block in response.content:
                             if hasattr(block, 'text'):
                                 assistant_message += block.text
-
                         break
 
-                # Determine expert category for UI display
                 expert = 'general'
                 msg_lower = message.lower()
                 if any(kw in msg_lower for kw in ['pod', 'deploy', 'service', 'node', 'kubectl', 'kubernetes', 'k8s', 'cluster']):
@@ -387,11 +411,7 @@ data:
                 assistant_message = f"I'm having trouble connecting to my AI backend. Error: {str(e)}"
                 expert = 'general'
 
-            # Store assistant response
-            conversations[conversation_id].append({
-                "role": "assistant",
-                "content": assistant_message
-            })
+            conversations[conversation_id].append({"role": "assistant", "content": assistant_message})
 
             return jsonify({
                 "response": assistant_message,
@@ -419,10 +439,7 @@ data:
     def refresh_tools():
         """Refresh the MCP tools cache"""
         tools = fetch_mcp_tools()
-        return jsonify({
-            "message": "Tools refreshed",
-            "count": len(tools)
-        }), 200
+        return jsonify({"message": "Tools refreshed", "count": len(tools)}), 200
 
     @app.route('/api/conversations/<conversation_id>', methods=['GET'])
     def get_conversation_detail(conversation_id):
@@ -431,12 +448,8 @@ data:
             conversations[conversation_id] = []
 
         messages = [
-            {
-                "role": msg["role"],
-                "content": msg["content"],
-                "timestamp": "2026-01-19T00:00:00Z"
-            }
-            for msg in conversations[conversation_id]
+            {"role": m["role"], "content": m["content"], "timestamp": "2026-01-19T00:00:00Z"}
+            for m in conversations[conversation_id]
         ]
 
         return jsonify({
@@ -456,12 +469,8 @@ data:
             return jsonify([]), 200
 
         messages = [
-            {
-                "role": msg["role"],
-                "content": msg["content"],
-                "timestamp": "2026-01-19T00:00:00Z"
-            }
-            for msg in conversations[conversation_id]
+            {"role": m["role"], "content": m["content"], "timestamp": "2026-01-19T00:00:00Z"}
+            for m in conversations[conversation_id]
         ]
         return jsonify(messages), 200
 
@@ -469,7 +478,6 @@ data:
     def get_system_status():
         """Get status of all connected services and MCP servers"""
         import concurrent.futures
-
         import socket
 
         def check_service(name, url, timeout=3):
@@ -488,15 +496,12 @@ data:
                 return {"name": name, "status": "error", "error": str(e), "latency_ms": None}
 
         def check_redis(host, port, timeout=3):
-            """Check Redis connectivity using TCP socket"""
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(timeout)
                 start = datetime.utcnow()
                 sock.connect((host, port))
                 latency = int((datetime.utcnow() - start).total_seconds() * 1000)
-                # Just check connection - Redis may require auth
-                # Connection success means the service is running
                 sock.close()
                 return {"name": "redis", "status": "connected", "latency_ms": latency}
             except socket.timeout:
@@ -504,24 +509,18 @@ data:
             except Exception as e:
                 return {"name": "redis", "status": "disconnected", "error": str(e)[:50], "latency_ms": None}
 
-        # Define services to check (HTTP endpoints)
         services = {
-            # MCP Servers
-            "cortex-mcp": ("http://cortex-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
-            "sandfly-mcp": ("http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
-            "proxmox-mcp": ("http://proxmox-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
-            "unifi-mcp": ("http://unifi-mcp-server.cortex-system.svc.cluster.local:3000/health", "mcp"),
-            # Cortex Fabric
-            "fabric-gateway": ("http://fabric-gateway.cortex-system.svc.cluster.local:8080/health", "fabric"),
-            # Infrastructure (chat-related services)
+            "cortex-mcp": ("http://cortex-unified-mcp.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "sandfly-mcp": ("http://fabric-gateway.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "proxmox-mcp": ("http://fabric-gateway.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "unifi-mcp": ("http://fabric-gateway.cortex-system.svc.cluster.local:3000/health", "mcp"),
+            "fabric-gateway": ("http://fabric-gateway.cortex-system.svc.cluster.local:3000/health", "fabric"),
             "qdrant": ("http://qdrant.cortex-chat.svc.cluster.local:6333/readyz", "infrastructure"),
         }
 
-        # Check Claude API connectivity
         def check_claude_api():
             try:
-                # Quick test call to Claude API
-                response = anthropic_client.messages.create(
+                anthropic_client.messages.create(
                     model="claude-3-5-haiku-20241022",
                     max_tokens=5,
                     messages=[{"role": "user", "content": "ping"}]
@@ -530,27 +529,19 @@ data:
             except Exception as e:
                 return {"name": "claude-api", "status": "error", "error": str(e)[:100], "latency_ms": None}
 
-        results = {
-            "mcp_servers": [],
-            "cortex_fabric": [],
-            "infrastructure": [],
-            "mcp_call": {"status": "unknown", "last_call": None}
-        }
+        results = {"mcp_servers": [], "cortex_fabric": [], "infrastructure": [], "mcp_call": {"status": "unknown", "last_call": None}}
 
-        # Check services in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             future_to_service = {
                 executor.submit(check_service, name, url): (name, category)
                 for name, (url, category) in services.items()
             }
-            # Also check Claude API and Redis
             claude_future = executor.submit(check_claude_api)
             redis_future = executor.submit(check_redis, "redis.cortex-chat.svc.cluster.local", 6379)
 
             for future in concurrent.futures.as_completed(future_to_service):
                 name, category = future_to_service[future]
                 result = future.result()
-
                 if category == "mcp":
                     results["mcp_servers"].append(result)
                 elif category == "fabric":
@@ -558,11 +549,9 @@ data:
                 elif category == "infrastructure":
                     results["infrastructure"].append(result)
 
-            # Add Claude API and Redis results to infrastructure
             results["infrastructure"].append(claude_future.result())
             results["infrastructure"].append(redis_future.result())
 
-        # Determine overall status for each category
         def get_overall_status(items):
             if not items:
                 return "unknown"
@@ -579,70 +568,39 @@ data:
             "cortex_fabric": get_overall_status(results["cortex_fabric"]),
             "infrastructure": get_overall_status(results["infrastructure"])
         }
-
         results["timestamp"] = datetime.utcnow().isoformat()
 
         return jsonify(results), 200
 
-    # Service to Kubernetes deployment mapping
     SERVICE_DEPLOYMENTS = {
-        # MCP Servers
-        "cortex-mcp": {"namespace": "cortex-system", "deployment": "cortex-mcp-server"},
+        "cortex-mcp": {"namespace": "cortex-system", "deployment": "cortex-unified-mcp"},
         "sandfly-mcp": {"namespace": "cortex-system", "deployment": "sandfly-mcp-server"},
         "proxmox-mcp": {"namespace": "cortex-system", "deployment": "proxmox-mcp-server"},
         "unifi-mcp": {"namespace": "cortex-system", "deployment": "unifi-mcp-server"},
-        # Cortex Fabric
         "fabric-gateway": {"namespace": "cortex-system", "deployment": "fabric-gateway"},
-        # Infrastructure (chat-related)
         "qdrant": {"namespace": "cortex-chat", "deployment": "qdrant"},
         "redis": {"namespace": "cortex-chat", "deployment": "redis"},
-        # Note: claude-api cannot be restarted - it's an external service
     }
 
     def restart_deployment(namespace, deployment_name):
-        """Restart a deployment using Kubernetes API via HTTP"""
         try:
-            # Read service account token
             with open('/var/run/secrets/kubernetes.io/serviceaccount/token', 'r') as f:
                 token = f.read().strip()
-
-            # Read CA cert path
             ca_cert = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
-
-            # Kubernetes API server
             api_server = 'https://kubernetes.default.svc'
-
-            # Patch body to trigger rolling restart
-            patch_body = {
-                "spec": {
-                    "template": {
-                        "metadata": {
-                            "annotations": {
-                                "kubectl.kubernetes.io/restartedAt": datetime.utcnow().isoformat()
-                            }
-                        }
-                    }
-                }
-            }
-
+            patch_body = {"spec": {"template": {"metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": datetime.utcnow().isoformat()}}}}}
             url = f"{api_server}/apis/apps/v1/namespaces/{namespace}/deployments/{deployment_name}"
-
             response = requests.patch(
                 url,
                 json=patch_body,
-                headers={
-                    'Authorization': f'Bearer {token}',
-                    'Content-Type': 'application/strategic-merge-patch+json'
-                },
+                headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/strategic-merge-patch+json'},
                 verify=ca_cert,
                 timeout=10
             )
-
             if response.status_code in [200, 201]:
                 return True, None
             else:
                 return False, f"API returned {response.status_code}: {response.text[:200]}"
-
         except FileNotFoundError:
             return False, "Service account token not found - not running in cluster"
         except Exception as e:
@@ -650,17 +608,13 @@ data:
 
     @app.route('/api/restart', methods=['POST'])
     def restart_services():
-        """Restart unhealthy services via Kubernetes API"""
         data = request.json or {}
         services = data.get('services', [])
         restart_all_unhealthy = data.get('restart_all_unhealthy', False)
 
-        # If restart_all_unhealthy, first get status and find unhealthy services
         if restart_all_unhealthy:
-            # Get current status
             status_response = get_system_status()
             status_data = status_response[0].get_json()
-
             services = []
             for category in ['mcp_servers', 'cortex_fabric', 'infrastructure']:
                 for item in status_data.get(category, []):
@@ -671,62 +625,31 @@ data:
             return jsonify({"message": "No services to restart", "restarted": []}), 200
 
         results = {"restarted": [], "failed": [], "skipped": []}
-
         for service_name in services:
             if service_name not in SERVICE_DEPLOYMENTS:
                 results["skipped"].append({"name": service_name, "reason": "Unknown service"})
                 continue
-
             deployment_info = SERVICE_DEPLOYMENTS[service_name]
-            namespace = deployment_info["namespace"]
-            deployment = deployment_info["deployment"]
-
-            success, error = restart_deployment(namespace, deployment)
-
+            success, error = restart_deployment(deployment_info["namespace"], deployment_info["deployment"])
             if success:
-                results["restarted"].append({
-                    "name": service_name,
-                    "deployment": deployment,
-                    "namespace": namespace
-                })
-                logger.info(f"Restarted {deployment} in {namespace}")
+                results["restarted"].append({"name": service_name, **deployment_info})
+                logger.info(f"Restarted {deployment_info['deployment']} in {deployment_info['namespace']}")
             else:
-                results["failed"].append({
-                    "name": service_name,
-                    "error": error
-                })
-                logger.error(f"Failed to restart {deployment}: {error}")
+                results["failed"].append({"name": service_name, "error": error})
+                logger.error(f"Failed to restart {deployment_info['deployment']}: {error}")
 
         return jsonify(results), 200
 
     @app.route('/api/restart/<service_name>', methods=['POST'])
     def restart_single_service(service_name):
-        """Restart a single service by name"""
         if service_name not in SERVICE_DEPLOYMENTS:
             return jsonify({"error": f"Unknown service: {service_name}"}), 404
-
         deployment_info = SERVICE_DEPLOYMENTS[service_name]
-        namespace = deployment_info["namespace"]
-        deployment = deployment_info["deployment"]
-
-        success, error = restart_deployment(namespace, deployment)
-
+        success, error = restart_deployment(deployment_info["namespace"], deployment_info["deployment"])
         if success:
-            return jsonify({
-                "restarted": [{
-                    "name": service_name,
-                    "deployment": deployment,
-                    "namespace": namespace
-                }],
-                "failed": [],
-                "skipped": []
-            }), 200
+            return jsonify({"restarted": [{"name": service_name, **deployment_info}], "failed": [], "skipped": []}), 200
         else:
-            return jsonify({
-                "restarted": [],
-                "failed": [{"name": service_name, "error": error}],
-                "skipped": []
-            }), 500
+            return jsonify({"restarted": [], "failed": [{"name": service_name, "error": error}], "skipped": []}), 500
 
     if __name__ == '__main__':
         logger.info(f"Starting Cortex Chat API with {len(mcp_tools_cache)} MCP tools")
