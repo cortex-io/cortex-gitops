@@ -5,8 +5,13 @@ image:
 
 imagePullSecret: ghcr-pull-secret
 
-# Secret containing API credentials — same one used by fabric-gateway
+# Secret containing Proxmox/UniFi/Sandfly credentials
 secretName: fabric-gateway-secrets
+
+# Existing secrets shared with other fabric apps
+existingSecrets:
+  anthropic: cortex-chat-secrets   # key: anthropic-api-key
+  githubToken: github-token         # key: token
 
 # In-cluster gateway URL
 gatewayUrl: "http://fabric-gateway.cortex-system.svc.cluster.local:3000"
