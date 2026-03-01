@@ -30,6 +30,8 @@ spec:
         component: knowledge
     spec:
       terminationGracePeriodSeconds: 45
+      securityContext:
+        fsGroup: 1000
       imagePullSecrets:
       - name: ghcr-pull-secret
       containers:
