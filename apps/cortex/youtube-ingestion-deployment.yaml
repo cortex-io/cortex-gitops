@@ -30,6 +30,8 @@ spec:
         component: knowledge
     spec:
       terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - env:
         - name: PORT

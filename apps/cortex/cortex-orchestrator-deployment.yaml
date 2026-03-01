@@ -27,6 +27,8 @@ spec:
         app: cortex-orchestrator
     spec:
       terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - env:
         - name: ANTHROPIC_API_KEY
