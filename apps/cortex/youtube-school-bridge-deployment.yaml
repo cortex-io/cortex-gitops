@@ -36,7 +36,7 @@ spec:
     spec:
       containers:
       - name: bridge
-        image: ghcr.io/cortex-io/youtube-school-bridge:latest
+        image: ghcr.io/cortex-io/youtube-school-bridge:bbfaa65
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

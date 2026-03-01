@@ -43,7 +43,7 @@ spec:
                 operator: DoesNotExist
       containers:
       - name: validator
-        image: ghcr.io/cortex-io/rag-validator:latest
+        image: ghcr.io/cortex-io/rag-validator:bbfaa65
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

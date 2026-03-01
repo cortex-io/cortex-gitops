@@ -53,7 +53,7 @@ spec:
           value: /data/cache
         - name: IMPROVEMENTS_QUEUE
           value: improvements:raw
-        image: ghcr.io/cortex-io/youtube-ingestion:latest
+        image: ghcr.io/cortex-io/youtube-ingestion:bbfaa65
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3
