@@ -44,7 +44,7 @@ spec:
                 operator: DoesNotExist
       containers:
       - name: worker
-        image: ghcr.io/cortex-io/cortex-implementation-worker:latest
+        image: ghcr.io/cortex-io/implementation-worker:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

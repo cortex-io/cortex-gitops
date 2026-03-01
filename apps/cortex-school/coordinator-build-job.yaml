@@ -402,7 +402,7 @@ spec:
         args:
         - "--context=dir:///workspace"
         - "--dockerfile=/workspace/Dockerfile"
-        - "--destination=ghcr.io/cortex-io/cortex-school-coordinator:latest"
+        - "--destination=ghcr.io/cortex-io/coordinator:latest"
         - "--insecure"
         - "--skip-tls-verify"
         - "--registry-mirror=10.88.145.190:30500"
