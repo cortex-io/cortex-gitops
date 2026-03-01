@@ -29,8 +29,8 @@ spec:
       - env:
         - name: DATA_SOURCE_NAME
           value: postgresql://cortex:cortex_postgres_123@postgres.cortex-system.svc.cluster.local:5432/cortex?sslmode=disable
-        image: prometheuscommunity/postgres-exporter:latest
-        imagePullPolicy: Always
+        image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+        imagePullPolicy: IfNotPresent
         name: postgres-exporter
         lifecycle:
           preStop:
