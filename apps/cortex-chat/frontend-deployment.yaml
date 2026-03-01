@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cortex-chat
+  namespace: cortex-chat
+  labels:
+    app: cortex-chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cortex-chat
+  template:
+    metadata:
+      labels:
+        app: cortex-chat
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101  # nginx user
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: frontend
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: frontend-html
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_BIND_SERVICE"]
+      volumes:
+      - name: nginx-conf
+        configMap:
+          name: cortex-chat-nginx
+      - name: frontend-html
+        configMap:
+          name: frontend-html
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cortex-chat
+  namespace: cortex-chat
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: cortex-chat
