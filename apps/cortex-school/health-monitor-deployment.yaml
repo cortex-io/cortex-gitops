@@ -44,7 +44,7 @@ spec:
                 operator: DoesNotExist
       containers:
       - name: monitor
-        image: ghcr.io/cortex-io/cortex-health-monitor:latest
+        image: ghcr.io/cortex-io/health-monitor:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

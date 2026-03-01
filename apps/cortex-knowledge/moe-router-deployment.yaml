@@ -49,7 +49,7 @@ spec:
     spec:
       containers:
       - name: router
-        image: ghcr.io/cortex-io/cortex-moe-router:latest
+        image: ghcr.io/cortex-io/moe-router:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

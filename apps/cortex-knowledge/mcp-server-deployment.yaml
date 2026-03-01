@@ -48,7 +48,7 @@ spec:
       serviceAccountName: mcp-knowledge-tools
       containers:
       - name: server
-        image: ghcr.io/cortex-io/cortex-mcp-server:latest
+        image: ghcr.io/cortex-io/cortex:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
