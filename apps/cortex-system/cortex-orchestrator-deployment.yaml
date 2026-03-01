@@ -75,7 +75,7 @@ spec:
           value: INFO
         - name: LOG_FORMAT
           value: json
-        image: ghcr.io/cortex-io/cortex-orchestrator:latest
+        image: ghcr.io/cortex-io/cortex-orchestrator:bbfaa65
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3

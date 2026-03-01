@@ -54,7 +54,7 @@ spec:
           value: http://sandfly-mcp-server.cortex-system.svc.cluster.local:3000
         - name: CLOUDFLARE_MCP_URL
           value: http://cloudflare-mcp-server.cortex-system.svc.cluster.local:3000
-        image: ghcr.io/cortex-io/cortex-desktop:latest
+        image: ghcr.io/cortex-io/cortex-desktop:bbfaa65
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3
