@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knowledge-dashboard-nginx
+  namespace: cortex-knowledge
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knowledge-dashboard-html
+  namespace: cortex-knowledge
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>Knowledge Dashboard</title></head>
+    <body>
+    <h1>Cortex Knowledge Dashboard</h1>
+    <p>Dashboard content pending restoration.</p>
+    </body>
+    </html>
