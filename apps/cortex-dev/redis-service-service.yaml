@@ -7,9 +7,6 @@ metadata:
   name: redis-service
   namespace: cortex-dev
 spec:
-  clusterIP: 10.43.79.194
-  clusterIPs:
-  - 10.43.79.194
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

@@ -8,9 +8,6 @@ metadata:
   name: trivy-metrics
   namespace: cortex-security
 spec:
-  clusterIP: 10.43.168.67
-  clusterIPs:
-  - 10.43.168.67
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

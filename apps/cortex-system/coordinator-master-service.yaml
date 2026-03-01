@@ -5,9 +5,6 @@ metadata:
   name: coordinator-master
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.123.134
-  clusterIPs:
-  - 10.43.123.134
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

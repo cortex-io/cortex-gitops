@@ -5,9 +5,6 @@ metadata:
   name: security-master
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.173.115
-  clusterIPs:
-  - 10.43.173.115
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

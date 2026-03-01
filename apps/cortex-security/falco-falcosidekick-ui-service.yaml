@@ -15,9 +15,6 @@ metadata:
   name: falco-falcosidekick-ui
   namespace: cortex-security
 spec:
-  clusterIP: 10.43.123.37
-  clusterIPs:
-  - 10.43.123.37
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

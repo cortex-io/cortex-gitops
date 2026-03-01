@@ -5,9 +5,6 @@ metadata:
   name: improvement-detector
   namespace: cortex-knowledge
 spec:
-  clusterIP: 10.43.47.228
-  clusterIPs:
-  - 10.43.47.228
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

@@ -7,9 +7,6 @@ metadata:
   name: youtube-ingestion
   namespace: cortex
 spec:
-  clusterIP: 10.43.119.1
-  clusterIPs:
-  - 10.43.119.1
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

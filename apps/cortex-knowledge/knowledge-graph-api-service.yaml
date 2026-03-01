@@ -5,9 +5,6 @@ metadata:
   name: knowledge-graph-api
   namespace: cortex-knowledge
 spec:
-  clusterIP: 10.43.175.202
-  clusterIPs:
-  - 10.43.175.202
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

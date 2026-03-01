@@ -7,9 +7,6 @@ metadata:
   name: postgres
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.163.35
-  clusterIPs:
-  - 10.43.163.35
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

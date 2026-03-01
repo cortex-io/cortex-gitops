@@ -5,9 +5,6 @@ metadata:
   name: knowledge-extractor
   namespace: cortex-knowledge
 spec:
-  clusterIP: 10.43.83.251
-  clusterIPs:
-  - 10.43.83.251
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

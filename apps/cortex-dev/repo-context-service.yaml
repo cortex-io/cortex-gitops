@@ -7,9 +7,6 @@ metadata:
   name: repo-context
   namespace: cortex-dev
 spec:
-  clusterIP: 10.43.177.237
-  clusterIPs:
-  - 10.43.177.237
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

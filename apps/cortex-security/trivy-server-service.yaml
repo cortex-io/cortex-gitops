@@ -8,9 +8,6 @@ metadata:
   name: trivy-server
   namespace: cortex-security
 spec:
-  clusterIP: 10.43.110.161
-  clusterIPs:
-  - 10.43.110.161
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

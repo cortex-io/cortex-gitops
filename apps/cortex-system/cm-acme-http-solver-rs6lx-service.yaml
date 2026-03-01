@@ -19,9 +19,6 @@ metadata:
     name: cortex-mcp-tls-1-118174447-1464926704
     uid: 1617c1f3-42bc-41e0-a734-0cd42f7afaa7
 spec:
-  clusterIP: 10.43.239.32
-  clusterIPs:
-  - 10.43.239.32
   externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:

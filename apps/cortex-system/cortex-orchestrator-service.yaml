@@ -8,9 +8,6 @@ metadata:
   name: cortex-orchestrator
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.28.99
-  clusterIPs:
-  - 10.43.28.99
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

@@ -7,9 +7,6 @@ metadata:
   name: issue-parser
   namespace: cortex-dev
 spec:
-  clusterIP: 10.43.130.170
-  clusterIPs:
-  - 10.43.130.170
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

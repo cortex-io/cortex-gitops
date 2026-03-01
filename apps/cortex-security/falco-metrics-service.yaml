@@ -14,9 +14,6 @@ metadata:
   name: falco-metrics
   namespace: cortex-security
 spec:
-  clusterIP: 10.43.109.10
-  clusterIPs:
-  - 10.43.109.10
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
