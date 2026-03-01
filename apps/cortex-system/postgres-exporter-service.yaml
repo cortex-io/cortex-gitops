@@ -7,9 +7,6 @@ metadata:
   name: postgres-exporter
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.208.2
-  clusterIPs:
-  - 10.43.208.2
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

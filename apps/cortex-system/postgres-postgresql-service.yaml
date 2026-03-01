@@ -14,9 +14,6 @@ metadata:
   name: postgres-postgresql
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.135.206
-  clusterIPs:
-  - 10.43.135.206
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

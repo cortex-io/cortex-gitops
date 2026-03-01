@@ -7,9 +7,6 @@ metadata:
   name: pgadmin
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.27.208
-  clusterIPs:
-  - 10.43.27.208
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

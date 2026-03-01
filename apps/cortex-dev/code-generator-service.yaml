@@ -7,9 +7,6 @@ metadata:
   name: code-generator
   namespace: cortex-dev
 spec:
-  clusterIP: 10.43.109.65
-  clusterIPs:
-  - 10.43.109.65
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

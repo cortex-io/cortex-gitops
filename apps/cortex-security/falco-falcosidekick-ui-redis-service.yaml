@@ -15,9 +15,6 @@ metadata:
   name: falco-falcosidekick-ui-redis
   namespace: cortex-security
 spec:
-  clusterIP: 10.43.28.112
-  clusterIPs:
-  - 10.43.28.112
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

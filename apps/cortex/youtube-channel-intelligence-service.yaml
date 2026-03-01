@@ -7,9 +7,6 @@ metadata:
   name: youtube-channel-intelligence
   namespace: cortex
 spec:
-  clusterIP: 10.43.126.218
-  clusterIPs:
-  - 10.43.126.218
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

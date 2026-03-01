@@ -19,9 +19,6 @@ metadata:
     name: cortex-api-tls-1-181336435-531462493
     uid: 361c8780-5e22-4cad-bf47-4fd0d9daa616
 spec:
-  clusterIP: 10.43.204.106
-  clusterIPs:
-  - 10.43.204.106
   externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:

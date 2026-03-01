@@ -9,9 +9,6 @@ metadata:
   name: redis
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.214.90
-  clusterIPs:
-  - 10.43.214.90
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

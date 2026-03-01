@@ -15,9 +15,6 @@ metadata:
   name: redis-replicas
   namespace: cortex-system
 spec:
-  clusterIP: 10.43.134.95
-  clusterIPs:
-  - 10.43.134.95
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

@@ -8,9 +8,6 @@ metadata:
   name: redis
   namespace: cortex-security
 spec:
-  clusterIP: 10.43.57.150
-  clusterIPs:
-  - 10.43.57.150
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
