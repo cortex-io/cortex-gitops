@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cortex-queue-worker-pdb
+  namespace: cortex
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: cortex-queue-worker
+  unhealthyPodEvictionPolicy: IfHealthyBudget

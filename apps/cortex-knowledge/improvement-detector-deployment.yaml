@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '3'
+  name: improvement-detector
+  namespace: cortex-knowledge
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: improvement-detector
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-01-03T21:07:56Z'
+      creationTimestamp: null
+      labels:
+        app: improvement-detector
+        itil-component: improvement-detection
+    spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - args:
+        - 'pip install --user --no-cache-dir kubernetes pymongo neo4j prometheus-api-client
+          prometheus_client pyyaml numpy pandas scikit-learn requests && python /app/detector.py
+
+          '
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: HOME
+          value: /tmp
+        - name: PYTHONUSERBASE
+          value: /tmp/.local
+        - name: PYTHONUNBUFFERED
+          value: '1'
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: github-token
+              optional: true
+        image: python:3.11-slim
+        imagePullPolicy: IfNotPresent
+        name: detector
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 15
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q python"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep -q python"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 125m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/config
+          name: config
+        - mountPath: /app
+          name: app
+        - name: tmp
+          mountPath: /tmp
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      serviceAccount: improvement-detector
+      serviceAccountName: improvement-detector
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - configMap:
+          defaultMode: 420
+          name: improvement-detector-config
+        name: config
+      - configMap:
+          defaultMode: 420
+          name: improvement-detector-app
+        name: app

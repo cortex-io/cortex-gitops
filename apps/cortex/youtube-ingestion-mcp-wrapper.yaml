@@ -1,0 +1,293 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: youtube-ingestion-mcp-wrapper
+  namespace: cortex
+  labels:
+    app: youtube-ingestion-mcp
+    component: mcp-wrapper
+data:
+  server.py: |
+    #!/usr/bin/env python3
+    """
+    MCP Wrapper for YouTube Ingestion Service
+    Exposes youtube-ingestion capabilities as MCP tools
+    """
+    import os
+    import json
+    import logging
+    import asyncio
+    import httpx
+    from datetime import datetime
+    from typing import Any
+    from mcp.server import Server
+    from mcp.types import Tool, TextContent
+    from mcp.server.stdio import stdio_server
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    # YouTube Ingestion service URL
+    YOUTUBE_SERVICE_URL = os.getenv('YOUTUBE_SERVICE_URL', 'http://youtube-ingestion.cortex.svc.cluster.local:8080')
+    TELEMETRY_ENABLED = os.getenv('TELEMETRY_ENABLED', 'true').lower() == 'true'
+
+    app = Server("youtube-ingestion-mcp")
+
+    @app.list_tools()
+    async def list_tools() -> list[Tool]:
+        """List available YouTube ingestion tools."""
+        return [
+            Tool(
+                name="ingest_youtube_video",
+                description="Ingest a YouTube video by URL, extracting transcript and metadata for knowledge base",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "YouTube video URL"},
+                        "extract_transcript": {"type": "boolean", "description": "Extract video transcript", "default": True},
+                        "classify": {"type": "boolean", "description": "Classify content type", "default": True}
+                    },
+                    "required": ["url"]
+                }
+            ),
+            Tool(
+                name="search_transcripts",
+                description="Search ingested video transcripts for specific content",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "limit": {"type": "integer", "description": "Max results", "default": 10}
+                    },
+                    "required": ["query"]
+                }
+            ),
+            Tool(
+                name="get_video_metadata",
+                description="Get metadata for an ingested video",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "video_id": {"type": "string", "description": "YouTube video ID"}
+                    },
+                    "required": ["video_id"]
+                }
+            ),
+            Tool(
+                name="list_ingested_videos",
+                description="List all ingested videos with optional filtering",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "category": {"type": "string", "description": "Filter by category"},
+                        "limit": {"type": "integer", "description": "Max results", "default": 20}
+                    }
+                }
+            )
+        ]
+
+    @app.call_tool()
+    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        """Execute YouTube ingestion tools."""
+        logger.info(f"Calling tool: {name} with args: {arguments}")
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                if name == "ingest_youtube_video":
+                    response = await client.post(
+                        f"{YOUTUBE_SERVICE_URL}/api/ingest",
+                        json=arguments
+                    )
+                elif name == "search_transcripts":
+                    response = await client.post(
+                        f"{YOUTUBE_SERVICE_URL}/api/search",
+                        json=arguments
+                    )
+                elif name == "get_video_metadata":
+                    video_id = arguments.get("video_id")
+                    response = await client.get(
+                        f"{YOUTUBE_SERVICE_URL}/api/videos/{video_id}"
+                    )
+                elif name == "list_ingested_videos":
+                    response = await client.get(
+                        f"{YOUTUBE_SERVICE_URL}/api/videos",
+                        params=arguments
+                    )
+                else:
+                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+                result = response.json() if response.status_code == 200 else {"error": response.text}
+
+                # Log telemetry
+                if TELEMETRY_ENABLED:
+                    logger.info(f"Telemetry: tool={name}, status={response.status_code}")
+
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        except Exception as e:
+            logger.error(f"Tool error: {e}")
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    async def main():
+        async with stdio_server() as (read_stream, write_stream):
+            await app.run(read_stream, write_stream, app.create_initialization_options())
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+
+  requirements.txt: |
+    mcp>=0.9.0
+    httpx>=0.25.0
+    pydantic>=2.0.0
+
+  sse-wrapper.py: |
+    #!/usr/bin/env python3
+    """SSE/HTTP wrapper for MCP server."""
+    import os
+    import json
+    import asyncio
+    import subprocess
+    import uuid
+    from flask import Flask, request, Response, jsonify
+    import threading
+
+    app = Flask(__name__)
+    PORT = int(os.getenv('PORT', '3000'))
+    MCP_SCRIPT = os.getenv('MCP_SCRIPT', '/app/server.py')
+
+    sessions = {}
+
+    @app.route('/health', methods=['GET'])
+    def health():
+        return jsonify({"status": "healthy", "service": "youtube-ingestion-mcp"})
+
+    @app.route('/sse', methods=['GET'])
+    def sse():
+        session_id = str(uuid.uuid4())
+
+        def generate():
+            proc = subprocess.Popen(
+                ['python3', MCP_SCRIPT],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            sessions[session_id] = proc
+
+            try:
+                for line in proc.stdout:
+                    yield f"data: {line}\n\n"
+            finally:
+                proc.terminate()
+                sessions.pop(session_id, None)
+
+        return Response(generate(), mimetype='text/event-stream')
+
+    @app.route('/message', methods=['POST'])
+    def message():
+        data = request.json
+        session_id = data.get('session_id')
+        message = data.get('message')
+
+        if session_id in sessions:
+            proc = sessions[session_id]
+            proc.stdin.write(json.dumps(message) + '\n')
+            proc.stdin.flush()
+            return jsonify({"status": "sent"})
+
+        return jsonify({"error": "session not found"}), 404
+
+    if __name__ == '__main__':
+        app.run(host='0.0.0.0', port=PORT)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: youtube-ingestion-mcp
+  namespace: cortex
+  labels:
+    app: youtube-ingestion-mcp
+    component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: youtube-ingestion-mcp
+  template:
+    metadata:
+      labels:
+        app: youtube-ingestion-mcp
+        component: mcp-server
+    spec:
+      containers:
+      - name: mcp-server
+        image: python:3.11-slim
+        command:
+        - /bin/sh
+        - -c
+        - |
+          pip install -q flask mcp httpx pydantic
+          cd /app
+          python3 sse-wrapper.py
+        ports:
+        - containerPort: 3000
+          name: mcp
+        env:
+        - name: YOUTUBE_SERVICE_URL
+          value: "http://youtube-ingestion.cortex.svc.cluster.local:8080"
+        - name: TELEMETRY_ENABLED
+          value: "true"
+        - name: PORT
+          value: "3000"
+        - name: MCP_SCRIPT
+          value: "/app/server.py"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: mcp-code
+          mountPath: /app/server.py
+          subPath: server.py
+        - name: mcp-code
+          mountPath: /app/sse-wrapper.py
+          subPath: sse-wrapper.py
+        - name: mcp-code
+          mountPath: /app/requirements.txt
+          subPath: requirements.txt
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      volumes:
+      - name: mcp-code
+        configMap:
+          name: youtube-ingestion-mcp-wrapper
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: youtube-ingestion-mcp
+  namespace: cortex
+  labels:
+    app: youtube-ingestion-mcp
+spec:
+  selector:
+    app: youtube-ingestion-mcp
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: mcp
+  type: ClusterIP

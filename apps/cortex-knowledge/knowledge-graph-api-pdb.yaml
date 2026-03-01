@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: knowledge-graph-api-pdb
+  namespace: cortex-knowledge
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: knowledge-graph-api
+  unhealthyPodEvictionPolicy: IfHealthyBudget

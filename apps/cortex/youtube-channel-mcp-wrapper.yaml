@@ -1,0 +1,293 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: youtube-channel-mcp-wrapper
+  namespace: cortex
+  labels:
+    app: youtube-channel-mcp
+    component: mcp-wrapper
+data:
+  server.py: |
+    #!/usr/bin/env python3
+    """
+    MCP Wrapper for YouTube Channel Intelligence Service
+    Exposes channel monitoring and subscription management as MCP tools
+    """
+    import os
+    import json
+    import logging
+    import asyncio
+    import httpx
+    from typing import Any
+    from mcp.server import Server
+    from mcp.types import Tool, TextContent
+    from mcp.server.stdio import stdio_server
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    CHANNEL_SERVICE_URL = os.getenv('CHANNEL_SERVICE_URL', 'http://youtube-channel-intelligence.cortex.svc.cluster.local:8081')
+    TELEMETRY_ENABLED = os.getenv('TELEMETRY_ENABLED', 'true').lower() == 'true'
+
+    app = Server("youtube-channel-mcp")
+
+    @app.list_tools()
+    async def list_tools() -> list[Tool]:
+        """List available YouTube channel intelligence tools."""
+        return [
+            Tool(
+                name="subscribe_channel",
+                description="Subscribe to a YouTube channel for automatic video ingestion",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "channel_url": {"type": "string", "description": "YouTube channel URL or ID"},
+                        "auto_ingest": {"type": "boolean", "description": "Auto-ingest new videos", "default": True},
+                        "categories": {"type": "array", "items": {"type": "string"}, "description": "Content categories to track"}
+                    },
+                    "required": ["channel_url"]
+                }
+            ),
+            Tool(
+                name="list_subscriptions",
+                description="List all channel subscriptions",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "active_only": {"type": "boolean", "description": "Show only active subscriptions", "default": True}
+                    }
+                }
+            ),
+            Tool(
+                name="get_channel_stats",
+                description="Get statistics for a subscribed channel",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "channel_id": {"type": "string", "description": "YouTube channel ID"}
+                    },
+                    "required": ["channel_id"]
+                }
+            ),
+            Tool(
+                name="trigger_channel_poll",
+                description="Manually trigger a poll for new videos from subscribed channels",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "channel_id": {"type": "string", "description": "Specific channel ID (optional, polls all if not provided)"}
+                    }
+                }
+            ),
+            Tool(
+                name="unsubscribe_channel",
+                description="Unsubscribe from a YouTube channel",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "channel_id": {"type": "string", "description": "YouTube channel ID"}
+                    },
+                    "required": ["channel_id"]
+                }
+            )
+        ]
+
+    @app.call_tool()
+    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        """Execute YouTube channel intelligence tools."""
+        logger.info(f"Calling tool: {name} with args: {arguments}")
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                if name == "subscribe_channel":
+                    response = await client.post(
+                        f"{CHANNEL_SERVICE_URL}/api/subscriptions",
+                        json=arguments
+                    )
+                elif name == "list_subscriptions":
+                    response = await client.get(
+                        f"{CHANNEL_SERVICE_URL}/api/subscriptions",
+                        params=arguments
+                    )
+                elif name == "get_channel_stats":
+                    channel_id = arguments.get("channel_id")
+                    response = await client.get(
+                        f"{CHANNEL_SERVICE_URL}/api/channels/{channel_id}/stats"
+                    )
+                elif name == "trigger_channel_poll":
+                    response = await client.post(
+                        f"{CHANNEL_SERVICE_URL}/api/poll",
+                        json=arguments
+                    )
+                elif name == "unsubscribe_channel":
+                    channel_id = arguments.get("channel_id")
+                    response = await client.delete(
+                        f"{CHANNEL_SERVICE_URL}/api/subscriptions/{channel_id}"
+                    )
+                else:
+                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+                result = response.json() if response.status_code in [200, 201] else {"error": response.text, "status": response.status_code}
+
+                if TELEMETRY_ENABLED:
+                    logger.info(f"Telemetry: tool={name}, status={response.status_code}")
+
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        except Exception as e:
+            logger.error(f"Tool error: {e}")
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    async def main():
+        async with stdio_server() as (read_stream, write_stream):
+            await app.run(read_stream, write_stream, app.create_initialization_options())
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+
+  sse-wrapper.py: |
+    #!/usr/bin/env python3
+    """SSE/HTTP wrapper for MCP server."""
+    import os
+    import json
+    import subprocess
+    import uuid
+    from flask import Flask, request, Response, jsonify
+
+    app = Flask(__name__)
+    PORT = int(os.getenv('PORT', '3000'))
+    MCP_SCRIPT = os.getenv('MCP_SCRIPT', '/app/server.py')
+
+    sessions = {}
+
+    @app.route('/health', methods=['GET'])
+    def health():
+        return jsonify({"status": "healthy", "service": "youtube-channel-mcp"})
+
+    @app.route('/sse', methods=['GET'])
+    def sse():
+        session_id = str(uuid.uuid4())
+
+        def generate():
+            proc = subprocess.Popen(
+                ['python3', MCP_SCRIPT],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            sessions[session_id] = proc
+
+            try:
+                for line in proc.stdout:
+                    yield f"data: {line}\n\n"
+            finally:
+                proc.terminate()
+                sessions.pop(session_id, None)
+
+        return Response(generate(), mimetype='text/event-stream')
+
+    @app.route('/message', methods=['POST'])
+    def message():
+        data = request.json
+        session_id = data.get('session_id')
+        message = data.get('message')
+
+        if session_id in sessions:
+            proc = sessions[session_id]
+            proc.stdin.write(json.dumps(message) + '\n')
+            proc.stdin.flush()
+            return jsonify({"status": "sent"})
+
+        return jsonify({"error": "session not found"}), 404
+
+    if __name__ == '__main__':
+        app.run(host='0.0.0.0', port=PORT)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: youtube-channel-mcp
+  namespace: cortex
+  labels:
+    app: youtube-channel-mcp
+    component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: youtube-channel-mcp
+  template:
+    metadata:
+      labels:
+        app: youtube-channel-mcp
+        component: mcp-server
+    spec:
+      containers:
+      - name: mcp-server
+        image: python:3.11-slim
+        command:
+        - /bin/sh
+        - -c
+        - |
+          pip install -q flask mcp httpx pydantic
+          cd /app
+          python3 sse-wrapper.py
+        ports:
+        - containerPort: 3000
+          name: mcp
+        env:
+        - name: CHANNEL_SERVICE_URL
+          value: "http://youtube-channel-intelligence.cortex.svc.cluster.local:8081"
+        - name: TELEMETRY_ENABLED
+          value: "true"
+        - name: PORT
+          value: "3000"
+        - name: MCP_SCRIPT
+          value: "/app/server.py"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: mcp-code
+          mountPath: /app/server.py
+          subPath: server.py
+        - name: mcp-code
+          mountPath: /app/sse-wrapper.py
+          subPath: sse-wrapper.py
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      volumes:
+      - name: mcp-code
+        configMap:
+          name: youtube-channel-mcp-wrapper
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: youtube-channel-mcp
+  namespace: cortex
+  labels:
+    app: youtube-channel-mcp
+spec:
+  selector:
+    app: youtube-channel-mcp
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: mcp
+  type: ClusterIP

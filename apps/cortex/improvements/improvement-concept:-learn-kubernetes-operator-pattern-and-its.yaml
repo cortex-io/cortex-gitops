@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-concept:-learn-kubernetes-operator-pattern-and-its
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: architecture
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.95"
+    cortex.ai/implemented-at: "2026-01-23T21:36:35.925479"
+data:
+  title: "Concept: Learn Kubernetes operator pattern and its role in extending cluster functionalit"
+  description: "Learn Kubernetes operator pattern and its role in extending cluster functionality through custom controllers"
+  implementation-notes: ""
+  category: architecture

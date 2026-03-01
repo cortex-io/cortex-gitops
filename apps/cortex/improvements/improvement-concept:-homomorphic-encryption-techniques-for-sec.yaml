@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-concept:-homomorphic-encryption-techniques-for-sec
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: security
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.95"
+    cortex.ai/implemented-at: "2026-01-25T14:51:48.121168"
+data:
+  title: "Concept: Homomorphic encryption techniques for secure computation on encrypted data"
+  description: "Homomorphic encryption techniques for secure computation on encrypted data"
+  implementation-notes: ""
+  category: security

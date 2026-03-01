@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  name: knowledge-extractor
+  namespace: cortex-knowledge
+spec:
+  clusterIP: 10.43.83.251
+  clusterIPs:
+  - 10.43.83.251
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  - name: metrics
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: knowledge-extractor
+  sessionAffinity: None
+  type: ClusterIP

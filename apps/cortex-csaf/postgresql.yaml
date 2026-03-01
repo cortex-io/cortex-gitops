@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: csaf-postgres-pvc
+  namespace: cortex-csaf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: csaf-postgres-secret
+  namespace: cortex-csaf
+type: Opaque
+stringData:
+  POSTGRES_DB: csaf_registry
+  POSTGRES_USER: csaf
+  POSTGRES_PASSWORD: csaf-secure-password-change-me
+  DATABASE_URL: postgresql://csaf:csaf-secure-password-change-me@csaf-postgres:5432/csaf_registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-postgres
+  namespace: cortex-csaf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csaf-postgres
+  template:
+    metadata:
+      labels:
+        app: csaf-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: csaf-postgres-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: csaf-postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: csaf-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - csaf
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - csaf
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: csaf-postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-postgres
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+  type: ClusterIP

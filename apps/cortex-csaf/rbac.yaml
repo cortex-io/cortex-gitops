@@ -1,0 +1,58 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: csaf-security-reader
+rules:
+  # Read access to core resources
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "events", "namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # Read secrets for cert monitoring
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+    resourceNames: []  # Limit via RBAC policy
+
+  # Node operations (including cordon for remediation)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch"]
+
+  # Read pod logs for analysis
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+
+  # App workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+  # Jobs (for agent monitoring)
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+
+  # Network policies (read and create for remediation)
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies", "ingresses"]
+    verbs: ["get", "list", "watch", "create", "update"]
+
+  # Metrics for monitoring
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: csaf-runtime-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: csaf-security-reader
+subjects:
+  - kind: ServiceAccount
+    name: csaf-runtime
+    namespace: cortex-csaf

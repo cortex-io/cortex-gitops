@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cortex-knowledge
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/cortex-io/cortex-gitops.git
+    targetRevision: main
+    path: apps/cortex-knowledge
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cortex-knowledge
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
