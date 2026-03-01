@@ -84,6 +84,9 @@ spec:
               value: {{ .Values.githubStateRepo | quote }}
             - name: STATE_REPO
               value: {{ .Values.githubStateRepo | quote }}
+            # fabric gateway self-reference — lets chat's agentic loop call back for tools
+            - name: FABRIC_GATEWAY_URL
+              value: "http://localhost:3000"
             # qdrant
             - name: QDRANT_URL
               value: {{ .Values.qdrantUrl | quote }}
