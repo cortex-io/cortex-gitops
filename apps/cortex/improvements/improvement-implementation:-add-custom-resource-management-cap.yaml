@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-implementation:-add-custom-resource-management-cap
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: capability
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.95"
+    cortex.ai/implemented-at: "2026-01-23T21:37:46.884140"
+data:
+  title: "Implementation: Add custom resource management capability for teams to define their own infrastr"
+  description: "Add custom resource management capability for teams to define their own infrastructure patterns"
+  implementation-notes: "Implement CRD-like system allowing teams to define custom infrastructure patterns and automate their provisioning through Cortex"
+  category: capability

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-concept:-study-custom-resource-definitions-(crds)-
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: architecture
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.95"
+    cortex.ai/implemented-at: "2026-01-23T21:36:47.674520"
+data:
+  title: "Concept: Study Custom Resource Definitions (CRDs) and how they extend Kubernetes API with"
+  description: "Study Custom Resource Definitions (CRDs) and how they extend Kubernetes API with domain-specific objects"
+  implementation-notes: ""
+  category: architecture

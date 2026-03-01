@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csaf-redis-config
+  namespace: cortex-csaf
+data:
+  redis.conf: |
+    maxmemory 2gb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-redis
+  namespace: cortex-csaf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csaf-redis
+  template:
+    metadata:
+      labels:
+        app: csaf-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+          ports:
+            - containerPort: 6379
+              name: redis
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 2Gi
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: csaf-redis-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-redis
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: csaf-redis-secret
+  namespace: cortex-csaf
+type: Opaque
+stringData:
+  REDIS_URL: redis://csaf-redis:6379/0

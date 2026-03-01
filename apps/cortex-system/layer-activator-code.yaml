@@ -1,0 +1,366 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: layer-activator-code
+  namespace: cortex-system
+data:
+  main.py: |
+    #!/usr/bin/env python3
+    """
+    Layer Activator - Serverless MCP Stack Management
+    """
+
+    import asyncio
+    import logging
+    import os
+    import time
+    from contextlib import asynccontextmanager
+    from datetime import datetime
+    from typing import Dict, List, Optional
+
+    import httpx
+    import redis.asyncio as redis
+    import yaml
+    from fastapi import FastAPI, HTTPException
+    from kubernetes import client, config
+    from kubernetes.client.rest import ApiException
+    from pydantic import BaseModel
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger("layer-activator")
+
+
+    class StackComponent(BaseModel):
+        deployment: str
+        namespace: Optional[str] = None
+
+
+    class StackRoute(BaseModel):
+        pattern: str
+
+
+    class StackConfig(BaseModel):
+        id: str
+        name: str
+        namespace: str
+        min_replicas: int = 0
+        max_replicas: int = 5
+        cooldown_seconds: int = 300
+        components: List[StackComponent]
+        routes: List[StackRoute]
+        health_endpoint: Optional[str] = "/health"
+        service_port: int = 8080
+
+
+    class StackStatus(BaseModel):
+        stack_id: str
+        status: str
+        current_replicas: int
+        last_activity: Optional[datetime]
+        components: List[Dict]
+
+
+    class ActivateRequest(BaseModel):
+        stack_id: str
+
+
+    class RouteRequest(BaseModel):
+        task_type: str
+        payload: Dict
+
+
+    class LayerActivator:
+        def __init__(self, config_path: str, redis_url: str):
+            self.config_path = config_path
+            self.redis_url = redis_url
+            self.stacks: Dict[str, StackConfig] = {}
+            self.activity: Dict[str, datetime] = {}
+            self.k8s_apps = None
+            self.k8s_core = None
+            self.redis = None
+            self.http_client = None
+            self._scale_down_task = None
+            self._running = False
+
+        async def start(self):
+            logger.info("Starting Layer Activator...")
+            try:
+                config.load_incluster_config()
+            except config.ConfigException:
+                config.load_kube_config()
+            self.k8s_apps = client.AppsV1Api()
+            self.k8s_core = client.CoreV1Api()
+            self.redis = redis.from_url(self.redis_url, decode_responses=True)
+            await self.redis.ping()
+            self.http_client = httpx.AsyncClient(timeout=10.0)
+            await self.load_config()
+            self._running = True
+            self._scale_down_task = asyncio.create_task(self._scale_down_loop())
+            logger.info(f"Layer Activator started with {len(self.stacks)} stacks")
+
+        async def stop(self):
+            logger.info("Stopping Layer Activator...")
+            self._running = False
+            if self._scale_down_task:
+                self._scale_down_task.cancel()
+                try:
+                    await self._scale_down_task
+                except asyncio.CancelledError:
+                    pass
+            if self.http_client:
+                await self.http_client.aclose()
+            if self.redis:
+                await self.redis.close()
+
+        async def load_config(self):
+            if not os.path.exists(self.config_path):
+                logger.warning(f"Config not found: {self.config_path}")
+                return
+            with open(self.config_path) as f:
+                data = yaml.safe_load(f)
+            for s in data.get("stacks", []):
+                stack = StackConfig(
+                    id=s["id"],
+                    name=s.get("name", s["id"]),
+                    namespace=s["namespace"],
+                    min_replicas=s.get("min_replicas", 0),
+                    max_replicas=s.get("max_replicas", 5),
+                    cooldown_seconds=s.get("cooldown", 300),
+                    components=[StackComponent(**c) for c in s.get("components", [])],
+                    routes=[StackRoute(**r) for r in s.get("routes", [])],
+                    service_port=s.get("service_port", 8080),
+                )
+                self.stacks[stack.id] = stack
+                logger.info(f"Loaded stack: {stack.id}")
+
+        async def get_stack_status(self, stack_id: str) -> StackStatus:
+            if stack_id not in self.stacks:
+                raise ValueError(f"Unknown stack: {stack_id}")
+            stack = self.stacks[stack_id]
+            components = []
+            total = 0
+            for c in stack.components:
+                ns = c.namespace or stack.namespace
+                try:
+                    d = self.k8s_apps.read_namespaced_deployment(c.deployment, ns)
+                    ready = d.status.ready_replicas or 0
+                    desired = d.spec.replicas or 0
+                    total += ready
+                    components.append({"name": c.deployment, "namespace": ns, "ready": ready, "desired": desired, "available": ready >= desired and desired > 0})
+                except ApiException as e:
+                    if e.status == 404:
+                        components.append({"name": c.deployment, "namespace": ns, "error": "not found"})
+                    else:
+                        raise
+            status = "scaled_down" if total == 0 else ("active" if all(x.get("available", False) for x in components if "error" not in x) else "activating")
+            return StackStatus(stack_id=stack_id, status=status, current_replicas=total, last_activity=self.activity.get(stack_id), components=components)
+
+        async def activate_stack(self, stack_id: str) -> bool:
+            if stack_id not in self.stacks:
+                raise ValueError(f"Unknown stack: {stack_id}")
+            stack = self.stacks[stack_id]
+            logger.info(f"Activating stack: {stack_id}")
+            for c in stack.components:
+                ns = c.namespace or stack.namespace
+                try:
+                    d = self.k8s_apps.read_namespaced_deployment(c.deployment, ns)
+                    if d.spec.replicas == 0:
+                        d.spec.replicas = 1
+                        self.k8s_apps.patch_namespaced_deployment(c.deployment, ns, d)
+                        logger.info(f"Scaled up {c.deployment}")
+                except ApiException as e:
+                    logger.error(f"Failed to scale {c.deployment}: {e}")
+                    return False
+            await self.redis.hset("layer-activator:activations", stack_id, datetime.now().isoformat())
+            self.activity[stack_id] = datetime.now()
+            return True
+
+        async def wait_for_ready(self, stack_id: str, timeout: float = 60.0) -> bool:
+            start = time.time()
+            while time.time() - start < timeout:
+                status = await self.get_stack_status(stack_id)
+                if status.status == "active":
+                    elapsed = time.time() - start
+                    logger.info(f"Stack {stack_id} ready in {elapsed:.2f}s")
+                    await self.redis.lpush(f"layer-activator:cold-starts:{stack_id}", elapsed)
+                    await self.redis.ltrim(f"layer-activator:cold-starts:{stack_id}", 0, 99)
+                    return True
+                await asyncio.sleep(2.0)
+            return False
+
+        async def scale_down_stack(self, stack_id: str) -> bool:
+            if stack_id not in self.stacks:
+                raise ValueError(f"Unknown stack: {stack_id}")
+            stack = self.stacks[stack_id]
+            if stack.min_replicas > 0:
+                return False
+            logger.info(f"Scaling down: {stack_id}")
+            for c in stack.components:
+                ns = c.namespace or stack.namespace
+                try:
+                    d = self.k8s_apps.read_namespaced_deployment(c.deployment, ns)
+                    if d.spec.replicas > 0:
+                        d.spec.replicas = 0
+                        self.k8s_apps.patch_namespaced_deployment(c.deployment, ns, d)
+                except ApiException as e:
+                    logger.error(f"Failed to scale down {c.deployment}: {e}")
+                    return False
+            await self.redis.hset("layer-activator:scale-downs", stack_id, datetime.now().isoformat())
+            return True
+
+        def determine_stack(self, task_type: str) -> Optional[str]:
+            import re
+            for sid, s in self.stacks.items():
+                for r in s.routes:
+                    if re.match(r.pattern.replace("*", ".*"), task_type):
+                        return sid
+            return None
+
+        async def route_request(self, task_type: str, payload: Dict, timeout: float = 90.0) -> Dict:
+            stack_id = self.determine_stack(task_type)
+            if not stack_id:
+                raise ValueError(f"No stack for: {task_type}")
+            stack = self.stacks[stack_id]
+            status = await self.get_stack_status(stack_id)
+            if status.status == "scaled_down":
+                await self.activate_stack(stack_id)
+                if not await self.wait_for_ready(stack_id):
+                    raise RuntimeError(f"Stack {stack_id} not ready")
+            elif status.status == "activating":
+                if not await self.wait_for_ready(stack_id):
+                    raise RuntimeError(f"Stack {stack_id} not ready")
+            self.activity[stack_id] = datetime.now()
+            primary = stack.components[0]
+            ns = primary.namespace or stack.namespace
+            url = f"http://{primary.deployment}.{ns}.svc.cluster.local:{stack.service_port}"
+            try:
+                r = await self.http_client.post(url, json={"task_type": task_type, **payload}, timeout=timeout)
+                r.raise_for_status()
+                return {"stack_id": stack_id, "response": r.json()}
+            except httpx.HTTPError as e:
+                raise RuntimeError(f"Request failed: {e}")
+
+        async def _scale_down_loop(self):
+            while self._running:
+                try:
+                    await asyncio.sleep(60)
+                    now = datetime.now()
+                    for sid, s in self.stacks.items():
+                        if s.min_replicas > 0:
+                            continue
+                        last = self.activity.get(sid)
+                        if last and (now - last).total_seconds() > s.cooldown_seconds:
+                            status = await self.get_stack_status(sid)
+                            if status.status == "active":
+                                await self.scale_down_stack(sid)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Scale-down error: {e}")
+
+        async def get_metrics(self) -> Dict:
+            m = {"total_stacks": len(self.stacks), "active_stacks": 0, "scaled_down_stacks": 0}
+            for sid in self.stacks:
+                try:
+                    s = await self.get_stack_status(sid)
+                    if s.status == "active":
+                        m["active_stacks"] += 1
+                    elif s.status == "scaled_down":
+                        m["scaled_down_stacks"] += 1
+                except:
+                    pass
+            return m
+
+
+    activator: Optional[LayerActivator] = None
+
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        global activator
+        activator = LayerActivator(
+            config_path=os.getenv("STACK_CONFIG", "/config/stacks.yaml"),
+            redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+        )
+        await activator.start()
+        yield
+        await activator.stop()
+
+
+    app = FastAPI(title="Layer Activator", version="1.0.0", lifespan=lifespan)
+
+
+    @app.get("/health")
+    async def health():
+        return {"status": "healthy"}
+
+
+    @app.get("/ready")
+    async def ready():
+        if activator and activator.redis:
+            try:
+                await activator.redis.ping()
+                return {"status": "ready"}
+            except:
+                pass
+        raise HTTPException(503, "Not ready")
+
+
+    @app.get("/stacks")
+    async def list_stacks():
+        stacks = []
+        for sid, s in activator.stacks.items():
+            status = await activator.get_stack_status(sid)
+            stacks.append({"id": s.id, "name": s.name, "namespace": s.namespace, "status": status.status, "replicas": status.current_replicas})
+        return {"stacks": stacks}
+
+
+    @app.get("/stacks/{stack_id}")
+    async def get_stack(stack_id: str):
+        if stack_id not in activator.stacks:
+            raise HTTPException(404, f"Stack not found: {stack_id}")
+        status = await activator.get_stack_status(stack_id)
+        s = activator.stacks[stack_id]
+        return {"id": s.id, "name": s.name, "status": status.status, "replicas": status.current_replicas, "components": status.components}
+
+
+    @app.post("/activate")
+    async def activate(request: ActivateRequest):
+        if request.stack_id not in activator.stacks:
+            raise HTTPException(404, f"Stack not found: {request.stack_id}")
+        start = time.time()
+        await activator.activate_stack(request.stack_id)
+        ready = await activator.wait_for_ready(request.stack_id)
+        return {"stack_id": request.stack_id, "status": "active" if ready else "activating", "time": time.time() - start}
+
+
+    @app.post("/route")
+    async def route(request: RouteRequest):
+        try:
+            return await activator.route_request(request.task_type, request.payload)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+
+
+    @app.post("/scale-down/{stack_id}")
+    async def scale_down(stack_id: str):
+        if stack_id not in activator.stacks:
+            raise HTTPException(404, f"Stack not found: {stack_id}")
+        if not await activator.scale_down_stack(stack_id):
+            raise HTTPException(400, "Scale down not allowed")
+        return {"stack_id": stack_id, "status": "scaled_down"}
+
+
+    @app.get("/metrics")
+    async def metrics():
+        return await activator.get_metrics()
+
+
+    if __name__ == "__main__":
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

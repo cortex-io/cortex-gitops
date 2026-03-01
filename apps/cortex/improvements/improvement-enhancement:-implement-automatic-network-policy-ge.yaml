@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-enhancement:-implement-automatic-network-policy-ge
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: capability
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.93"
+    cortex.ai/implemented-at: "2026-01-23T21:36:24.085290"
+data:
+  title: "Enhancement: Implement automatic network policy generation based on observed traffic patterns"
+  description: "Implement automatic network policy generation based on observed traffic patterns"
+  implementation-notes: "Monitor pod communication for 24h, generate allow-list policies, require approval before applying"
+  category: capability

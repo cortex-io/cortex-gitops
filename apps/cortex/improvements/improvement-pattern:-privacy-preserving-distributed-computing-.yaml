@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: improvement-pattern:-privacy-preserving-distributed-computing-
+  namespace: cortex
+  labels:
+    managed-by: cortex-online-school
+    category: architecture
+    auto-implemented: "true"
+  annotations:
+    cortex.ai/source: youtube-learning
+    cortex.ai/relevance: "0.95"
+    cortex.ai/implemented-at: "2026-01-25T14:51:59.941726"
+data:
+  title: "Pattern: Privacy-preserving distributed computing architectures for sensitive workloads"
+  description: "Privacy-preserving distributed computing architectures for sensitive workloads"
+  implementation-notes: ""
+  category: architecture

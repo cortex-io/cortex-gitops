@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: trivy-server
+    cortex.ai/component: security-monitoring
+  name: trivy-metrics
+  namespace: cortex-security
+spec:
+  clusterIP: 10.43.168.67
+  clusterIPs:
+  - 10.43.168.67
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: metrics
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: trivy-server
+  sessionAffinity: None
+  type: ClusterIP

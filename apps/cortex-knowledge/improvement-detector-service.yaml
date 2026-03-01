@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  name: improvement-detector
+  namespace: cortex-knowledge
+spec:
+  clusterIP: 10.43.47.228
+  clusterIPs:
+  - 10.43.47.228
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  - name: metrics
+    port: 9092
+    protocol: TCP
+    targetPort: 9092
+  selector:
+    app: improvement-detector
+  sessionAffinity: None
+  type: ClusterIP

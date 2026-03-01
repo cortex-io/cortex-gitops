@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: code-generator
+  name: code-generator
+  namespace: cortex-dev
+spec:
+  clusterIP: 10.43.109.65
+  clusterIPs:
+  - 10.43.109.65
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: code-generator
+  sessionAffinity: None
+  type: ClusterIP

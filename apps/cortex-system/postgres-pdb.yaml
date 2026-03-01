@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: cortex-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres
+  unhealthyPodEvictionPolicy: IfHealthyBudget

@@ -1,0 +1,110 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: moe-router
+  namespace: cortex-knowledge
+  labels:
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`moe-router.cortex.local`) || Host(`knowledge.cortex.local`)
+    kind: Rule
+    services:
+    - name: moe-router
+      port: 8080
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: qdrant
+  namespace: cortex-knowledge
+  labels:
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`qdrant.cortex.local`) || PathPrefix(`/qdrant`)
+    kind: Rule
+    services:
+    - name: qdrant
+      port: 6333
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mcp-server
+  namespace: cortex-knowledge
+  labels:
+    app.kubernetes.io/part-of: cortex
+    cortex.ai/layer: "true"
+    cortex.ai/burst-enabled: "true"
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`mcp.cortex.local`) || PathPrefix(`/mcp`)
+    kind: Rule
+    services:
+    - name: mcp-server
+      port: 3000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-ingress-config
+  namespace: cortex-knowledge
+  labels:
+    cortex.ai/layer: "true"
+data:
+  README.md: |
+    # Traefik Ingress for cortex-knowledge Layer
+
+    ## Endpoints
+
+    ### MoE Router
+    - **Internal**: `http://moe-router.cortex-knowledge:8080`
+    - **External**: `http://knowledge.cortex.local` or `http://moe-router.cortex.local`
+    - **Purpose**: Expert routing decisions for knowledge domain
+
+    ### Qdrant
+    - **Internal**: `http://qdrant.cortex-knowledge:6333`
+    - **External**: `http://qdrant.cortex.local`
+    - **Purpose**: Vector database for knowledge embeddings
+
+    ### MCP Server
+    - **Internal**: `http://mcp-server.cortex-knowledge:3000`
+    - **External**: `http://mcp.cortex.local`
+    - **Purpose**: Tool execution (knowledge-graph, elasticsearch, mongodb, phoenix)
+
+    ## Testing Scale-Up
+
+    From outside the cluster:
+    ```bash
+    # Add to /etc/hosts
+    echo "10.88.145.XXX knowledge.cortex.local" >> /etc/hosts
+
+    # Trigger scale-up
+    curl http://knowledge.cortex.local/health
+    ```
+
+    From inside the cluster:
+    ```bash
+    kubectl run -n cortex-knowledge test --image=busybox --rm -it -- \
+      wget -q -O- http://moe-router:8080/health
+    ```
+
+    ## Monitoring
+
+    Watch for scale-up:
+    ```bash
+    kubectl get pods -n cortex-knowledge -w | grep moe-router
+    kubectl get hpa -n cortex-knowledge -w
+    kubectl get scaledobject -n cortex-knowledge
+    ```

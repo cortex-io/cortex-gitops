@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandfly-web
+  namespace: cortex-system
+  labels:
+    app: sandfly-web
+spec:
+  type: ClusterIP
+  ports:
+  - name: https
+    port: 443
+    targetPort: 443
+    protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: sandfly-web
+  namespace: cortex-system
+  labels:
+    app: sandfly-web
+subsets:
+- addresses:
+  - ip: 10.88.140.176
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP

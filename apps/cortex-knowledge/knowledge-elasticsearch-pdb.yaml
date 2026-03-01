@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: knowledge-elasticsearch-pdb
+  namespace: cortex-knowledge
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: knowledge-elasticsearch
+  unhealthyPodEvictionPolicy: IfHealthyBudget

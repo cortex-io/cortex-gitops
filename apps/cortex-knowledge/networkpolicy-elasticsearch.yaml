@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elasticsearch-access
+  namespace: cortex-knowledge
+spec:
+  podSelector:
+    matchLabels:
+      app: knowledge-elasticsearch
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow from same namespace
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 9200
+    - protocol: TCP
+      port: 9300

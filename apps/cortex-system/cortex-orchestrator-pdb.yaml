@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cortex-orchestrator-pdb
+  namespace: cortex-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: cortex-orchestrator
+  unhealthyPodEvictionPolicy: IfHealthyBudget

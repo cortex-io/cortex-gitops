@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  name: cicd-master
+  namespace: cortex-system
+spec:
+  clusterIP: 10.43.199.106
+  clusterIPs:
+  - 10.43.199.106
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: cicd-master
+  sessionAffinity: None
+  type: ClusterIP

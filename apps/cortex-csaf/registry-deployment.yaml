@@ -1,0 +1,328 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csaf-registry-code
+  namespace: cortex-csaf
+data:
+  main.py: |
+    #!/usr/bin/env python3
+    """
+    CSAF Registry Service
+    Manages security app definitions with PostgreSQL storage
+    """
+    import os
+    import json
+    import yaml
+    import logging
+    from datetime import datetime
+    from flask import Flask, request, jsonify
+    from flask_cors import CORS
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    app = Flask(__name__)
+    CORS(app)
+
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://csaf:csaf-secure-password-change-me@csaf-postgres:5432/csaf_registry')
+
+    def get_db():
+        """Get database connection"""
+        return psycopg2.connect(DATABASE_URL)
+
+    def init_db():
+        """Initialize database schema"""
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS security_apps (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) UNIQUE NOT NULL,
+                version VARCHAR(50) NOT NULL,
+                description TEXT,
+                author VARCHAR(255),
+                tags TEXT[],
+                definition JSONB NOT NULL,
+                status VARCHAR(50) DEFAULT 'inactive',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS app_executions (
+                id SERIAL PRIMARY KEY,
+                app_name VARCHAR(255) NOT NULL,
+                run_id VARCHAR(255) NOT NULL,
+                trigger_type VARCHAR(50),
+                status VARCHAR(50),
+                findings JSONB,
+                error TEXT,
+                duration_ms INTEGER,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP
+            )
+        """)
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info("Database initialized")
+
+    @app.route('/health', methods=['GET'])
+    def health():
+        return jsonify({"status": "healthy", "service": "csaf-registry"})
+
+    @app.route('/ready', methods=['GET'])
+    def ready():
+        try:
+            conn = get_db()
+            conn.close()
+            return jsonify({"status": "ready"})
+        except Exception as e:
+            return jsonify({"status": "not ready", "error": str(e)}), 503
+
+    @app.route('/api/apps', methods=['GET'])
+    def list_apps():
+        """List all security apps"""
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT name, version, description, status, tags, created_at, updated_at FROM security_apps ORDER BY created_at DESC")
+        apps = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        return jsonify({"apps": [dict(app) for app in apps]})
+
+    @app.route('/api/apps/<name>', methods=['GET'])
+    def get_app(name):
+        """Get specific app definition"""
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM security_apps WHERE name = %s", (name,))
+        app = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not app:
+            return jsonify({"error": "App not found"}), 404
+
+        return jsonify({"app": dict(app)})
+
+    @app.route('/api/apps', methods=['POST'])
+    def create_app():
+        """Create new security app"""
+        data = request.get_json()
+
+        if not data or 'metadata' not in data or 'spec' not in data:
+            return jsonify({"error": "Invalid app definition"}), 400
+
+        name = data['metadata']['name']
+        version = data['metadata'].get('version', '1.0.0')
+        description = data['metadata'].get('description', '')
+        author = data['metadata'].get('author', 'unknown')
+        tags = data['metadata'].get('tags', [])
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        try:
+            cur.execute("""
+                INSERT INTO security_apps (name, version, description, author, tags, definition)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (name) DO UPDATE
+                SET version = EXCLUDED.version,
+                    description = EXCLUDED.description,
+                    definition = EXCLUDED.definition,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (name, version, description, author, tags, json.dumps(data)))
+
+            conn.commit()
+            logger.info(f"Created/updated app: {name}")
+            return jsonify({"status": "created", "name": name}), 201
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error creating app: {e}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            cur.close()
+            conn.close()
+
+    @app.route('/api/apps/<name>', methods=['DELETE'])
+    def delete_app(name):
+        """Delete security app"""
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("DELETE FROM security_apps WHERE name = %s", (name,))
+        deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if deleted == 0:
+            return jsonify({"error": "App not found"}), 404
+
+        logger.info(f"Deleted app: {name}")
+        return jsonify({"status": "deleted", "name": name})
+
+    @app.route('/api/apps/<name>/status', methods=['PATCH'])
+    def update_app_status(name):
+        """Update app status (active/inactive/paused)"""
+        data = request.get_json()
+        status = data.get('status')
+
+        if status not in ['active', 'inactive', 'paused']:
+            return jsonify({"error": "Invalid status"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("UPDATE security_apps SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE name = %s", (status, name))
+        updated = cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if updated == 0:
+            return jsonify({"error": "App not found"}), 404
+
+        logger.info(f"Updated app {name} status to {status}")
+        return jsonify({"status": "updated", "name": name, "new_status": status})
+
+    @app.route('/api/executions', methods=['POST'])
+    def record_execution():
+        """Record app execution result"""
+        data = request.get_json()
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO app_executions (app_name, run_id, trigger_type, status, findings, error, duration_ms, started_at, completed_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            data.get('app_name'),
+            data.get('run_id'),
+            data.get('trigger_type'),
+            data.get('status'),
+            json.dumps(data.get('findings', [])),
+            data.get('error'),
+            data.get('duration_ms'),
+            data.get('started_at'),
+            data.get('completed_at')
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"status": "recorded"}), 201
+
+    @app.route('/api/apps/<name>/executions', methods=['GET'])
+    def get_app_executions(name):
+        """Get execution history for an app"""
+        limit = request.args.get('limit', 50, type=int)
+
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT * FROM app_executions
+            WHERE app_name = %s
+            ORDER BY started_at DESC
+            LIMIT %s
+        """, (name, limit))
+
+        executions = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        return jsonify({"executions": [dict(ex) for ex in executions]})
+
+    if __name__ == '__main__':
+        init_db()
+        app.run(host='0.0.0.0', port=8080)
+
+  requirements.txt: |
+    flask==3.0.0
+    flask-cors==4.0.0
+    psycopg2-binary==2.9.9
+    pyyaml==6.0.1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-registry
+  namespace: cortex-csaf
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: csaf-registry
+  template:
+    metadata:
+      labels:
+        app: csaf-registry
+    spec:
+      serviceAccountName: csaf-runtime
+      containers:
+        - name: registry
+          image: python:3.11-slim
+          command:
+            - /bin/bash
+            - -c
+            - |
+              pip install --no-cache-dir -r /app/requirements.txt
+              python /app/main.py
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: csaf-postgres-secret
+                  key: DATABASE_URL
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: code
+          configMap:
+            name: csaf-registry-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-registry
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-registry
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

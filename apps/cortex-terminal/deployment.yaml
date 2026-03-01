@@ -1,0 +1,119 @@
+---
+# Cortex Terminal — Claude Code + tmux in-cluster, accessible via Tailscale
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cortex-terminal
+  namespace: cortex-system
+  labels:
+    app.kubernetes.io/name: cortex-terminal
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cortex-terminal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cortex-terminal
+    spec:
+      serviceAccountName: cortex-terminal
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: terminal
+          image: ghcr.io/git-fabric/terminal:latest
+          imagePullPolicy: Always
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cortex-chat-secrets
+                  key: anthropic-api-key
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: home-data
+              mountPath: /home/node
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: home-data
+          persistentVolumeClaim:
+            claimName: cortex-terminal-home
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cortex-terminal
+  namespace: cortex-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cortex-terminal
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "namespaces", "nodes", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cortex-terminal
+subjects:
+  - kind: ServiceAccount
+    name: cortex-terminal
+    namespace: cortex-system
+roleRef:
+  kind: ClusterRole
+  name: cortex-terminal
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cortex-terminal-home
+  namespace: cortex-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cortex-terminal
+  namespace: cortex-system
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: cortex-terminal
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22

@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: shadow-ai-scanner-cleanup
+  namespace: cortex
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      serviceAccountName: shadow-ai-scanner
+      restartPolicy: Never
+      containers:
+      - name: cleanup
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Cleaning up stuck shadow-ai-scanner jobs..."
+
+          # Delete all stuck jobs (Running state with no completions for > 1 day)
+          kubectl get jobs -n cortex -l app=shadow-ai-scanner -o json | \
+            jq -r '.items[] | select(.status.active == 1 and .status.succeeded != 1) | .metadata.name' | \
+            while read job; do
+              echo "Deleting stuck job: $job"
+              kubectl delete job "$job" -n cortex --force --grace-period=0 || true
+            done
+
+          # Delete orphaned pods in ContainerCreating state
+          kubectl get pods -n cortex -l app=shadow-ai-scanner -o json | \
+            jq -r '.items[] | select(.status.phase == "Pending" or .status.containerStatuses[0].state.waiting.reason == "ContainerCreating") | .metadata.name' | \
+            while read pod; do
+              echo "Deleting stuck pod: $pod"
+              kubectl delete pod "$pod" -n cortex --force --grace-period=0 || true
+            done
+
+          echo "Cleanup complete"
