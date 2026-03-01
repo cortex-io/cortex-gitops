@@ -10,7 +10,7 @@ spec:
   ttlSecondsAfterFinished: 300
   template:
     spec:
-      serviceAccountName: shadow-ai-scanner
+      serviceAccountName: default
       restartPolicy: Never
       containers:
       - name: cleanup

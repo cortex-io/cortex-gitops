@@ -29,6 +29,8 @@ spec:
         app: cortex-desktop-mcp
     spec:
       terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - env:
         - name: PORT

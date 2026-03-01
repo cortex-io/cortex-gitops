@@ -46,6 +46,8 @@ spec:
               matchLabels:
                 app: cortex-orchestrator
             topologyKey: kubernetes.io/hostname
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - env:
         - name: POD_NAME

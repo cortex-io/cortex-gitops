@@ -34,6 +34,8 @@ spec:
         app: youtube-school-bridge
         component: bridge
     spec:
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - name: bridge
         image: ghcr.io/cortex-io/youtube-school-bridge:bbfaa65

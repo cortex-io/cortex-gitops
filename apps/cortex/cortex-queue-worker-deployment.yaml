@@ -31,6 +31,8 @@ spec:
         component: task-processor
     spec:
       terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - env:
         - name: REDIS_HOST

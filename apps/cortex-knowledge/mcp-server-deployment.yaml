@@ -46,6 +46,8 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: mcp-knowledge-tools
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       containers:
       - name: server
         image: ghcr.io/cortex-io/cortex:latest
