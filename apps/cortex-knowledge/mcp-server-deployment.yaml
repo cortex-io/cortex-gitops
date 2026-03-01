@@ -50,7 +50,7 @@ spec:
       - name: ghcr-pull-secret
       containers:
       - name: server
-        image: ghcr.io/cortex-io/cortex:latest
+        image: ghcr.io/cortex-io/cortex:566a9fd
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000

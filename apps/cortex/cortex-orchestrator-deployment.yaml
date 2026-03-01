@@ -48,7 +48,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        image: ghcr.io/cortex-io/cortex-orchestrator:latest
+        image: ghcr.io/cortex-io/cortex-orchestrator:bbfaa65
         imagePullPolicy: Always
         name: cortex-orchestrator
         lifecycle:
