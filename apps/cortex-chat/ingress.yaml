@@ -23,7 +23,7 @@ metadata:
 spec:
   secretName: cortex-chat-tls
   issuerRef:
-    name: selfsigned-issuer
+    name: letsencrypt-prod-dns
     kind: ClusterIssuer
   dnsNames:
   - chat.ry-ops.dev
