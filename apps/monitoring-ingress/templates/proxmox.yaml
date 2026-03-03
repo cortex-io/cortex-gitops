@@ -1,0 +1,58 @@
+---
+# TLS cert for pve01.ry-ops.dev
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pve01-tls
+  namespace: cortex-system
+spec:
+  secretName: pve01-tls
+  dnsNames:
+    - pve01.ry-ops.dev
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-prod-dns
+
+---
+# ServersTransport — skip TLS verification for Proxmox's self-signed cert
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: proxmox-transport
+  namespace: cortex-system
+spec:
+  insecureSkipVerify: true
+
+---
+# ExternalName service pointing at the Proxmox host IP
+apiVersion: v1
+kind: Service
+metadata:
+  name: pve01
+  namespace: cortex-system
+spec:
+  type: ExternalName
+  externalName: {{ .Values.proxmoxHost | quote }}
+  ports:
+    - port: {{ .Values.proxmoxPort }}
+      targetPort: {{ .Values.proxmoxPort }}
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: pve01
+  namespace: cortex-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`pve01.ry-ops.dev`)
+      services:
+        - name: pve01
+          port: {{ .Values.proxmoxPort }}
+          serversTransport: proxmox-transport
+          scheme: https
+  tls:
+    secretName: pve01-tls
