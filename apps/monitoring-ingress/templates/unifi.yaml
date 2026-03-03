@@ -1,0 +1,45 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: unifi-tls
+  namespace: default
+spec:
+  secretName: unifi-tls
+  dnsNames:
+    - unifi.ry-ops.dev
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-prod-dns
+
+---
+# ServersTransport — skip TLS verification for UniFi's self-signed cert
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: unifi-transport
+  namespace: default
+spec:
+  insecureSkipVerify: true
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: unifi-controller
+  namespace: default
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`unifi.ry-ops.dev`)
+      middlewares:
+        - name: unifi-headers
+      services:
+        - name: unifi-controller
+          port: 8443
+          serversTransport: unifi-transport
+          scheme: https
+  tls:
+    secretName: unifi-tls
