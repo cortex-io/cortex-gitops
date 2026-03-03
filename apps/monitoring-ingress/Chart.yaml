@@ -1,0 +1,5 @@
+apiVersion: v2
+name: monitoring-ingress
+description: Traefik IngressRoutes for Grafana and Proxmox UI
+type: application
+version: 0.1.0

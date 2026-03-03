@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-ingress
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/cortex-io/cortex-gitops.git
+    targetRevision: HEAD
+    path: apps/monitoring-ingress
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
