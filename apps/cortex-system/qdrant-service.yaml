@@ -1,0 +1,53 @@
+---
+# ClusterIP service for qdrant StatefulSet (Helm-managed StatefulSet, service deleted by decom cleanup)
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: cortex-system
+  labels:
+    app: qdrant
+    app.kubernetes.io/instance: qdrant
+    app.kubernetes.io/name: qdrant
+spec:
+  selector:
+    app: qdrant
+    app.kubernetes.io/instance: qdrant
+    app.kubernetes.io/name: qdrant
+  ports:
+    - name: http
+      port: 6333
+      targetPort: 6333
+    - name: grpc
+      port: 6334
+      targetPort: 6334
+    - name: p2p
+      port: 6335
+      targetPort: 6335
+---
+# Headless service required by the StatefulSet (serviceName: qdrant-headless)
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-headless
+  namespace: cortex-system
+  labels:
+    app: qdrant
+    app.kubernetes.io/instance: qdrant
+    app.kubernetes.io/name: qdrant
+spec:
+  clusterIP: None
+  selector:
+    app: qdrant
+    app.kubernetes.io/instance: qdrant
+    app.kubernetes.io/name: qdrant
+  ports:
+    - name: http
+      port: 6333
+      targetPort: 6333
+    - name: grpc
+      port: 6334
+      targetPort: 6334
+    - name: p2p
+      port: 6335
+      targetPort: 6335
