@@ -29,6 +29,8 @@ data:
         enabled: true
       - name: "@git-fabric/sandfly"
         enabled: true
+      - name: "git-steer/fabric"
+        enabled: true
 
 ---
 apiVersion: apps/v1
