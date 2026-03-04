@@ -1,0 +1,12 @@
+# k3s registries.yaml — deployed to /etc/rancher/k3s/registries.yaml on all nodes
+# Docker Hub auth prevents rate limiting (100 pulls/6hrs unauthenticated → 200 authenticated)
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://registry-1.docker.io"
+configs:
+  "registry-1.docker.io":
+    auth:
+      username: ryops
+      # PAT stored in dockerhub-pull-secret (kube-system) and Sealed Secrets
+      password: "${DOCKER_HUB_PAT}"
