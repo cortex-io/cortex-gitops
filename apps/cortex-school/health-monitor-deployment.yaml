@@ -24,7 +24,7 @@ metadata:
     app: health-monitor
     component: health-monitor
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: health-monitor

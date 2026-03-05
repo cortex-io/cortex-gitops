@@ -24,7 +24,7 @@ metadata:
     app: implementation-workers
     component: workers
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: implementation-workers

@@ -233,7 +233,7 @@ metadata:
     app: cortex-school-mcp
     component: mcp-server
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: cortex-school-mcp
