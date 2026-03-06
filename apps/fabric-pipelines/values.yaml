@@ -38,23 +38,24 @@ opsChat:
       cpu: 1000m
       memory: 512Mi
 
+# All pipelines suspended until 2026-04-01 (Anthropic API spend limit reached)
 pipelines:
   securityTriage:
-    enabled: true
+    enabled: false
     schedule: "0 */6 * * *"
 
   gitopsObserver:
-    enabled: true
+    enabled: false
     schedule: "*/15 * * * *"
 
   networkAudit:
-    enabled: true
+    enabled: false
     schedule: "0 2 * * *"
 
   proxmoxK8s:
-    enabled: true
+    enabled: false
     schedule: "*/30 * * * *"
 
   opsChat:
-    enabled: true
+    enabled: false
     schedule: "0 8 * * *"
