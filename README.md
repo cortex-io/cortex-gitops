@@ -1,54 +1,48 @@
+<div align="center">
+
 # Cortex GitOps
 
-**The source of truth for all Cortex k3s deployments.**
+**The source of truth for all Cortex K3s deployments.**
 
-## The Control Plane Whispers; The Cluster Thunders
+> :warning: **This project is archived.** No longer under active development.
 
-This repository contains all Kubernetes manifests for the Cortex platform. ArgoCD watches this repository and automatically syncs changes to the k3s cluster.
+</div>
+
+---
+
+## How It Works
+
+ArgoCD watches this repo and syncs changes to the K3s cluster automatically. Manual `kubectl apply` is forbidden — all changes flow through Git.
+
+## Architecture
+
+<div align="center"><img src="docs/architecture.svg" alt="GitOps Flow" width="800"></div>
 
 ## Structure
 
 ```
 cortex-gitops/
-├── apps/                       # Application manifests organized by namespace
-│   ├── cortex-system/         # Core platform services
-│   ├── cortex/                # Main cortex services
-│   ├── cortex-chat/           # Chat interface
-│   ├── cortex-cicd/           # CI/CD pipelines
-│   ├── cortex-dev/            # Development tools
-│   ├── cortex-security/       # Security services
-│   ├── cortex-knowledge/      # Knowledge management
-│   └── cortex-autonomous/     # Autonomous agents
-├── argocd-apps/               # ArgoCD Application definitions
-├── base/                      # Base manifests and kustomizations
-└── README.md
+├── apps/                      # Manifests by namespace
+│   ├── cortex-system/        # Core platform services
+│   ├── cortex/               # Main services
+│   ├── cortex-chat/          # Chat interface
+│   ├── cortex-cicd/          # CI/CD pipelines
+│   ├── cortex-dev/           # Dev tools
+│   ├── cortex-security/      # Security (Wazuh, scanning)
+│   ├── cortex-knowledge/     # Knowledge management
+│   └── cortex-autonomous/    # Autonomous agents
+├── argocd-apps/              # ArgoCD Application CRDs
+└── base/                     # Base kustomizations
 ```
-
-## Workflow
-
-1. **Update manifests** in this repository
-2. **Commit and push** to main branch
-3. **ArgoCD detects changes** and syncs to cluster
-4. **Cluster pulls and deploys** automatically
 
 ## Rules
 
-- ✅ All cluster resources MUST be defined here
-- ✅ Changes go through Git (version control + audit trail)
-- ✅ ArgoCD enforces self-healing (manual kubectl changes are reverted)
-- ❌ No direct kubectl apply (except emergencies with audit log)
-
-## Emergency Procedures
-
-If ArgoCD is down or broken:
-
-1. Apply fix: `kubectl apply -f emergency-fix.yaml`
-2. Log it: `echo "[date] EMERGENCY: reason" >> ~/cortex-audit.log`
-3. Commit to GitOps: Copy fix to this repo and commit immediately
-4. Verify ArgoCD syncs after recovery
+1. All cluster resources **must** be defined here
+2. ArgoCD self-heals — manual changes are reverted
+3. Git history = audit trail
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2026-01-11
-**Directive**: CLAUDE.md v2.1.0 (Project Thunder)
+<div align="center">
+<sub>Built with Claude. No longer maintained.</sub>
+</div>

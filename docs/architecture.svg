@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="800" height="480">
+  <defs>
+    <style>
+      @keyframes flowRight {
+        0% { stroke-dashoffset: 24; }
+        100% { stroke-dashoffset: 0; }
+      }
+      @keyframes flowUp {
+        0% { stroke-dashoffset: 24; }
+        100% { stroke-dashoffset: 0; }
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.8; }
+        50% { opacity: 1; }
+      }
+      .flow-line {
+        stroke-dasharray: 8 4;
+        animation: flowRight 0.8s linear infinite;
+      }
+      .flow-up {
+        stroke-dasharray: 8 4;
+        animation: flowUp 0.8s linear infinite;
+      }
+      .node-box {
+        rx: 8;
+        ry: 8;
+      }
+      .label {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        fill: #c9d1d9;
+        font-size: 13px;
+        text-anchor: middle;
+      }
+      .label-title {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        fill: #ffffff;
+        font-size: 14px;
+        font-weight: 600;
+        text-anchor: middle;
+      }
+      .label-small {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        fill: #8b949e;
+        font-size: 11px;
+        text-anchor: middle;
+      }
+      .ns-box {
+        rx: 4;
+        ry: 4;
+      }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="480" fill="#0d1117"/>
+
+  <!-- Git Commit Node -->
+  <rect x="20" y="90" width="120" height="60" class="node-box" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="117" class="label-title">Git Commit</text>
+  <text x="80" y="135" class="label-small">git push</text>
+
+  <!-- Arrow: Git -> GitHub -->
+  <line x1="140" y1="120" x2="220" y2="120" class="flow-line" stroke="#58a6ff" stroke-width="2"/>
+  <polygon points="220,115 230,120 220,125" fill="#58a6ff"/>
+
+  <!-- GitHub Repo Node -->
+  <rect x="230" y="90" width="140" height="60" class="node-box" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="300" y="117" class="label-title">GitHub Repo</text>
+  <text x="300" y="135" class="label-small">cortex-gitops</text>
+
+  <!-- Arrow: GitHub -> ArgoCD -->
+  <line x1="370" y1="120" x2="450" y2="120" class="flow-line" stroke="#3fb950" stroke-width="2"/>
+  <polygon points="450,115 460,120 450,125" fill="#3fb950"/>
+
+  <!-- ArgoCD Node -->
+  <rect x="460" y="82" width="140" height="76" class="node-box" fill="#161b22" stroke="#3fb950" stroke-width="2" animation="pulse"/>
+  <text x="530" y="112" class="label-title">ArgoCD</text>
+  <text x="530" y="130" class="label-small">sync + self-heal</text>
+  <text x="530" y="148" class="label-small" fill="#3fb950">&#x21BB;</text>
+
+  <!-- Arrow: ArgoCD -> K3s Cluster -->
+  <line x1="600" y1="120" x2="680" y2="120" class="flow-line" stroke="#f0883e" stroke-width="2"/>
+  <polygon points="680,115 690,120 680,125" fill="#f0883e"/>
+
+  <!-- K3s Cluster box -->
+  <rect x="30" y="200" width="740" height="260" class="node-box" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="400" y="225" class="label-title" fill="#f0883e">K3s Cluster</text>
+
+  <!-- Self-heal loop: Cluster -> ArgoCD -->
+  <path d="M 770,280 Q 790,280 790,200 Q 790,60 530,60 L 530,82" class="flow-up" fill="none" stroke="#3fb950" stroke-width="1.5" opacity="0.6"/>
+  <polygon points="525,82 530,72 535,82" fill="#3fb950" opacity="0.6"/>
+  <text x="795" y="170" class="label-small" fill="#3fb950" text-anchor="start" transform="rotate(-90 795 170)">self-heal</text>
+
+  <!-- Namespace boxes - Row 1 -->
+  <rect x="50" y="240" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="127" y="267" class="label">cortex-system</text>
+
+  <rect x="220" y="240" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="297" y="267" class="label">cortex</text>
+
+  <rect x="390" y="240" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="467" y="267" class="label">cortex-chat</text>
+
+  <rect x="560" y="240" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="637" y="267" class="label">cortex-cicd</text>
+
+  <!-- Namespace boxes - Row 2 -->
+  <rect x="50" y="300" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="127" y="327" class="label">cortex-dev</text>
+
+  <rect x="220" y="300" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="297" y="327" class="label">cortex-security</text>
+
+  <rect x="390" y="300" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="467" y="327" class="label">cortex-knowledge</text>
+
+  <rect x="560" y="300" width="155" height="44" class="ns-box" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+  <text x="637" y="327" class="label">cortex-autonomous</text>
+
+  <!-- Arrow lines from ArgoCD down to cluster -->
+  <line x1="530" y1="158" x2="530" y2="200" class="flow-line" stroke="#f0883e" stroke-width="1.5"/>
+
+  <!-- Legend -->
+  <text x="400" y="430" class="label-small">All changes flow through Git. Manual kubectl apply is forbidden.</text>
+  <text x="400" y="448" class="label-small" fill="#3fb950">ArgoCD continuously reconciles desired state with actual state.</text>
+</svg>
