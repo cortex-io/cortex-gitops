@@ -38,7 +38,7 @@ spec:
       - name: ghcr-pull-secret
       containers:
       - name: bridge
-        image: ghcr.io/cortex-io/youtube-school-bridge:bbfaa65
+        image: ghcr.io/cortex-io/youtube-school-bridge:d8eb8f1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
