@@ -39,17 +39,26 @@ jobs:
     steps:
       - name: Set variables
         id: vars
+        env:
+          PAYLOAD_COMMAND: ${{ github.event.client_payload.command }}
+          PAYLOAD_JOB_ID: ${{ github.event.client_payload.job_id }}
+          PAYLOAD_REASON: ${{ github.event.client_payload.reason }}
+          PAYLOAD_DRY_RUN: ${{ github.event.client_payload.dry_run }}
+          INPUT_COMMAND: ${{ inputs.command }}
+          INPUT_JOB_ID: ${{ inputs.job_id }}
+          INPUT_REASON: ${{ inputs.reason }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "command=${{ github.event.client_payload.command }}" >> $GITHUB_OUTPUT
-            echo "job_id=${{ github.event.client_payload.job_id }}" >> $GITHUB_OUTPUT
-            echo "reason=${{ github.event.client_payload.reason }}" >> $GITHUB_OUTPUT
-            echo "dry_run=${{ github.event.client_payload.dry_run }}" >> $GITHUB_OUTPUT
+            echo "command=$PAYLOAD_COMMAND" >> $GITHUB_OUTPUT
+            echo "job_id=$PAYLOAD_JOB_ID" >> $GITHUB_OUTPUT
+            echo "reason=$PAYLOAD_REASON" >> $GITHUB_OUTPUT
+            echo "dry_run=$PAYLOAD_DRY_RUN" >> $GITHUB_OUTPUT
           else
-            echo "command=${{ inputs.command }}" >> $GITHUB_OUTPUT
-            echo "job_id=${{ inputs.job_id }}" >> $GITHUB_OUTPUT
-            echo "reason=${{ inputs.reason }}" >> $GITHUB_OUTPUT
-            echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
+            echo "command=$INPUT_COMMAND" >> $GITHUB_OUTPUT
+            echo "job_id=$INPUT_JOB_ID" >> $GITHUB_OUTPUT
+            echo "reason=$INPUT_REASON" >> $GITHUB_OUTPUT
+            echo "dry_run=$INPUT_DRY_RUN" >> $GITHUB_OUTPUT
           fi
 
       - name: Setup kubeconfig
